@@ -1,14 +1,9 @@
+-- lua/raphael/themes.lua
 local M = {}
 
 M.theme_map = {}
 M.filetype_themes = {}
 M.installed = {}
-
-function M.merge_user_config(cfg)
-  if cfg.filetype_themes then
-    M.filetype_themes = vim.tbl_deep_extend("force", M.filetype_themes, cfg.filetype_themes)
-  end
-end
 
 function M.refresh()
   M.installed = {}
