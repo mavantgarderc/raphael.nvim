@@ -4,13 +4,30 @@ if vim.fn.has("nvim-0.9.0") == 0 then
   return
 end
 
--- Defer loading until after plugin initialization
-vim.schedule(function()
-  local ok, raphael = pcall(require, "raphael")
-  if ok and raphael.state and raphael.state.current then
-    local themes = require("raphael.themes")
-    if themes.is_available(raphael.state.current) then
-      pcall(vim.cmd.colorscheme, raphael.state.current)
+-- Hook into session saving to export theme state
+vim.api.nvim_create_autocmd("SessionWritePost", {
+  callback = function()
+    -- Get the session file path
+    local session_file = vim.v.this_session
+    if session_file and session_file ~= "" then
+      local ok, raphael = pcall(require, "raphael")
+      if ok and raphael.export_for_session then
+        -- Read current session
+        local f = io.open(session_file, "r")
+        if not f then return end
+        local content = f:read("*a")
+        f:close()
+
+        -- Append Raphael state if not already present
+        if not content:match("g:raphael_session_theme") then
+          local export = raphael.export_for_session()
+          f = io.open(session_file, "a")
+          if f then
+            f:write(export)
+            f:close()
+          end
+        end
+      end
     end
-  end
-end)
+  end,
+})
