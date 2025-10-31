@@ -64,6 +64,11 @@ local function parse_line_theme(line)
   return nil
 end
 
+local function parse_line_header(line)
+  local captured = line:match("^%s*[^%s]+%s+(.+)%s*%(%d+%)%s*$")
+  return captured and trim(captured) or nil
+end
+
 local function debounce(ms, fn)
   local timer = nil
   return function(...)
@@ -74,6 +79,7 @@ local function debounce(ms, fn)
       timer = nil
     end
     timer = vim.defer_fn(function()
+      ---@diagnostic disable-next-line: deprecated
       pcall(fn, unpack(args))
       timer = nil
     end, ms)
@@ -81,11 +87,7 @@ local function debounce(ms, fn)
 end
 
 local function get_hl_rgb(name)
-  local ok, hl = pcall(vim.api.nvim_get_hl_by_name, name, true)
-  if ok and hl then
-    return hl
-  end
-  ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name })
+  local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
   if ok and hl then
     return hl
   end
@@ -135,17 +137,17 @@ function M.update_palette(theme)
   local pad = math.max(math.floor((picker_w - display_w) / 2), 0)
   local line = string.rep(" ", pad) .. blocks_str
 
-  pcall(vim.api.nvim_buf_set_option, palette_buf, "modifiable", true)
+  pcall(vim.api.nvim_set_option_value, "modifiable", true, { buf = palette_buf })
   pcall(vim.api.nvim_buf_set_lines, palette_buf, 0, -1, false, { line })
-  pcall(vim.api.nvim_buf_set_option, palette_buf, "modifiable", false)
+  pcall(vim.api.nvim_set_option_value, "modifiable", false, { buf = palette_buf })
 
   local bufline = (vim.api.nvim_buf_get_lines(palette_buf, 0, 1, false) or { "" })[1] or ""
-  pcall(vim.api.nvim_buf_clear_namespace, palette_buf, 0, 0, -1)
+  pcall(vim.api.nvim_buf_clear_namespace, palette_buf, -1, 0, -1)
 
   for i, hl_name in ipairs(PALETTE_HL) do
     local hl = get_hl_rgb(hl_name)
     if hl then
-      local color_int = hl.fg or hl.foreground or hl.bg
+      local color_int = hl.fg or hl.bg
       if color_int then
         local gname = ensure_palette_hl(i, color_int)
 
@@ -158,7 +160,7 @@ function M.update_palette(theme)
           end
           occurrence = occurrence + 1
           if occurrence == i then
-            pcall(vim.api.nvim_buf_add_highlight, palette_buf, 0, gname, 0, s - 1, e)
+            pcall(vim.api.nvim_buf_add_highlight, palette_buf, -1, gname, 0, s - 1, e)
             break
           end
           search_pos = e + 1
@@ -208,35 +210,7 @@ local function render(opts)
   if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then
     return
   end
-
   local lines = {}
-
-  if #(state_ref.bookmarks or {}) > 0 then
-    local bookmark_icon = ICON_GROUP_EXP
-    table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
-    for _, t in ipairs(state_ref.bookmarks) do
-      if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
-        local warning = themes.is_available(t) and "" or " 󰝧 "
-        local b = " "
-        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
-        table.insert(lines, "  " .. warning .. b .. s .. t)
-      end
-    end
-  end
-
-  if #(state_ref.history or {}) > 0 then
-    local recent_icon = ICON_GROUP_EXP
-    table.insert(lines, recent_icon .. " Recent (" .. #state_ref.history .. ")")
-    for _, t in ipairs(state_ref.history) do
-      if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
-        local warning = themes.is_available(t) and "" or " 󰝧 "
-        local b = bookmarks[t] and ICON_BOOKMARK or " "
-        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
-        table.insert(lines, "  " .. warning .. b .. s .. t)
-      end
-    end
-  end
-
   local display_map = vim.deepcopy(themes.theme_map)
 
   if exclude_configured then
@@ -255,6 +229,44 @@ local function render(opts)
   end
 
   local is_display_grouped = not vim.islist(display_map)
+
+  local bookmark_filtered = {}
+  for _, t in ipairs(state_ref.bookmarks or {}) do
+    if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
+      table.insert(bookmark_filtered, t)
+    end
+  end
+  if #bookmark_filtered > 0 then
+    local bookmark_icon = collapsed["__bookmarks"] and ICON_GROUP_COL or ICON_GROUP_EXP
+    table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
+    if not collapsed["__bookmarks"] then
+      for _, t in ipairs(bookmark_filtered) do
+        local warning = themes.is_available(t) and "" or " 󰝧 "
+        local b = " "
+        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+        table.insert(lines, "  " .. warning .. b .. s .. t)
+      end
+    end
+  end
+
+  local recent_filtered = {}
+  for _, t in ipairs(state_ref.history or {}) do
+    if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
+      table.insert(recent_filtered, t)
+    end
+  end
+  if #recent_filtered > 0 then
+    local recent_icon = collapsed["__recent"] and ICON_GROUP_COL or ICON_GROUP_EXP
+    table.insert(lines, recent_icon .. " Recent (" .. #state_ref.history .. ")")
+    if not collapsed["__recent"] then
+      for _, t in ipairs(recent_filtered) do
+        local warning = themes.is_available(t) and "" or " 󰝧 "
+        local b = bookmarks[t] and ICON_BOOKMARK or " "
+        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+        table.insert(lines, "  " .. warning .. b .. s .. t)
+      end
+    end
+  end
 
   if not is_display_grouped then
     for _, t in ipairs(display_map) do
@@ -351,7 +363,7 @@ local function open_search()
     style = "minimal",
     border = "rounded",
   })
-  pcall(vim.api.nvim_buf_set_option, search_buf, "buftype", "prompt")
+  pcall(vim.api.nvim_set_option_value, "buftype", "prompt", { buf = search_buf })
   vim.fn.prompt_setprompt(search_buf, ICON_SEARCH .. " ")
   pcall(vim.api.nvim_set_current_win, search_win)
   vim.cmd("startinsert")
@@ -399,12 +411,14 @@ function M.open(core, opts)
     bookmarks[b] = true
   end
   collapsed = type(state_ref.collapsed) == "table" and vim.deepcopy(state_ref.collapsed) or {}
+  collapsed["__bookmarks"] = collapsed["__bookmarks"] or false
+  collapsed["__recent"] = collapsed["__recent"] or false
 
   if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then
     picker_buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_option(picker_buf, "bufhidden", "wipe")
-    vim.api.nvim_buf_set_option(picker_buf, "buftype", "nofile")
-    vim.api.nvim_buf_set_option(picker_buf, "filetype", "raphael_picker")
+    vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = picker_buf })
+    vim.api.nvim_set_option_value("buftype", "nofile", { buf = picker_buf })
+    vim.api.nvim_set_option_value("filetype", "raphael_picker", { buf = picker_buf })
   end
 
   picker_h = math.max(6, math.floor(vim.o.lines * 0.6))
@@ -435,7 +449,7 @@ function M.open(core, opts)
 
   vim.keymap.set("n", "<CR>", function()
     local line = vim.api.nvim_get_current_line()
-    local hdr = line:match("^%s*[^%s]+%s+(.+)%s*%(")
+    local hdr = parse_line_header(line)
     if hdr then
       return
     end
@@ -461,14 +475,22 @@ function M.open(core, opts)
 
   vim.keymap.set("n", "c", function()
     local line = vim.api.nvim_get_current_line()
-    local hdr = line:match("^%s*[^%s]+%s+(.+)%s*%(")
+    local hdr = parse_line_header(line)
     if hdr then
+      vim.notify("Detected header: " .. hdr, vim.log.levels.INFO)
+      if hdr == "Bookmarks" then
+        hdr = "__bookmarks"
+      elseif hdr == "Recent" then
+        hdr = "__recent"
+      end
       collapsed[hdr] = not collapsed[hdr]
       state_ref.collapsed = vim.deepcopy(collapsed)
       if core_ref and core_ref.save_state then
         pcall(core_ref.save_state)
       end
       render(opts)
+    else
+      vim.notify("No header detected on line", vim.log.levels.WARN)
     end
   end, { buffer = picker_buf, desc = "Collapse/expand group" })
 
