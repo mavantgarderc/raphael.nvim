@@ -74,7 +74,7 @@ local function debounce(ms, fn)
       timer = nil
     end
     timer = vim.defer_fn(function()
-      pcall(fn, table.unpack(args))
+      pcall(fn, unpack(args))
       timer = nil
     end, ms)
   end
@@ -121,10 +121,10 @@ function M.update_palette(theme)
 
   if not palette_buf or not vim.api.nvim_buf_is_valid(palette_buf) then
     palette_buf = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_set_option_value("buftype", "nofile", { buf = palette_buf })
-        vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = palette_buf })
-        vim.api.nvim_set_option_value("modifiable", false, { buf = palette_buf })
-    end
+    vim.api.nvim_set_option_value("buftype", "nofile", { buf = palette_buf })
+    vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = palette_buf })
+    vim.api.nvim_set_option_value("modifiable", false, { buf = palette_buf })
+  end
 
   local blocks = {}
   for i = 1, #PALETTE_HL do
@@ -208,15 +208,29 @@ local function render(opts)
   if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then
     return
   end
+
   local lines = {}
 
   if #(state_ref.bookmarks or {}) > 0 then
-    local bookmark_icon = ICON_GROUP_EXP 
+    local bookmark_icon = ICON_GROUP_EXP
     table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
     for _, t in ipairs(state_ref.bookmarks) do
       if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
         local warning = themes.is_available(t) and "" or " 󰝧 "
-        local b = " " 
+        local b = " "
+        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+        table.insert(lines, "  " .. warning .. b .. s .. t)
+      end
+    end
+  end
+
+  if #(state_ref.history or {}) > 0 then
+    local recent_icon = ICON_GROUP_EXP
+    table.insert(lines, recent_icon .. " Recent (" .. #state_ref.history .. ")")
+    for _, t in ipairs(state_ref.history) do
+      if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
+        local warning = themes.is_available(t) and "" or " 󰝧 "
+        local b = bookmarks[t] and ICON_BOOKMARK or " "
         local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
         table.insert(lines, "  " .. warning .. b .. s .. t)
       end
@@ -277,9 +291,9 @@ local function render(opts)
     end
   end
 
-    pcall(vim.api.nvim_set_option_value, "modifiable", true, { buf = picker_buf })
-    pcall(vim.api.nvim_buf_set_lines, picker_buf, 0, -1, false, lines)
-    pcall(vim.api.nvim_set_option_value, "modifiable", false, { buf = picker_buf })
+  pcall(vim.api.nvim_set_option_value, "modifiable", true, { buf = picker_buf })
+  pcall(vim.api.nvim_buf_set_lines, picker_buf, 0, -1, false, lines)
+  pcall(vim.api.nvim_set_option_value, "modifiable", false, { buf = picker_buf })
 end
 
 local function close_picker(revert)
