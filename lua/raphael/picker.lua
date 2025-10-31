@@ -1,3 +1,4 @@
+-- lua/raphael/picker.lua
 local themes = require("raphael.themes")
 local M = {}
 
@@ -22,7 +23,7 @@ local ICON_CURRENT_ON = ""
 local ICON_CURRENT_OFF = ""
 local ICON_GROUP_EXP = ""
 local ICON_GROUP_COL = ""
-local BLOCK_CHAR = "██"
+local BLOCK_CHAR = " 󱡌 "
 local ICON_SEARCH = ""
 
 -- palette hl groups - expanded for better color representation
@@ -51,6 +52,8 @@ local function parse_line_theme(line)
   if line:match("%(%d+%)%s*$") then
     return nil
   end
+  -- Strip warning emoji if present
+  line = line:gsub("%s* 󰝧 ", "")
   local theme = line:match("([%w_%-]+)%s*$")
   if theme and theme ~= "" then
     return theme
@@ -210,31 +213,81 @@ function M.update_palette(theme)
 end
 
 -- render picker
-local function render()
+local function render(opts)
+  opts = opts or {}
+  local only_configured = opts.only_configured or false
+  local exclude_configured = opts.exclude_configured or false
+
+  if only_configured and exclude_configured then
+    return  -- Invalid combo
+  end
+
   if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then
     return
   end
   local lines = {}
-  for group, items in pairs(themes.theme_map) do
-    local visible_count = 0
-    for _, t in ipairs(items) do
-      if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
-        visible_count = visible_count + 1
+  local display_map = vim.deepcopy(themes.theme_map)
+
+  if exclude_configured then
+    -- Show ALL installed themes NOT in theme_map
+    local all_installed = vim.tbl_keys(themes.installed)
+    table.sort(all_installed)
+    local all_configured = themes.get_all_themes()
+    local extras = {}
+    for _, theme in ipairs(all_installed) do
+      if not vim.tbl_contains(all_configured, theme) then
+        table.insert(extras, theme)
       end
     end
-    local header_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
-    local summary = collapsed[group] and string.format("(%d themes hidden)", #items) or string.format("(%d)", #items)
-    table.insert(lines, string.format("%s %s %s", header_icon, group, summary))
-    if not collapsed[group] then
+    
+    -- Always use flat list for extras
+    display_map = extras
+  elseif only_configured then
+    -- Use theme_map as-is, NO extras added
+    -- This means ONLY themes in user's config will show
+  end
+
+  local is_display_grouped = not vim.tbl_islist(display_map)
+
+  if not is_display_grouped then
+    -- Flat: no headers, just list all
+    for _, t in ipairs(display_map) do
+      if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
+        local warning = themes.is_available(t) and "" or " 󰝧 "
+        local b = bookmarks[t] and ICON_BOOKMARK or " "
+        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+        table.insert(lines, string.format("%s%s %s %s", warning, b, s, t))
+      end
+    end
+  else
+    -- Grouped: show with headers
+    for group, items in pairs(display_map) do
+      -- Filter items for search
+      local filtered_items = {}
       for _, t in ipairs(items) do
         if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
-          local b = bookmarks[t] and ICON_BOOKMARK or " "
-          local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
-          table.insert(lines, string.format("  %s %s %s", b, s, t))
+          table.insert(filtered_items, t)
+        end
+      end
+      
+      -- Only show group if it has visible items
+      if #filtered_items > 0 then
+        local header_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
+        local summary = string.format("(%d)", #items)
+        table.insert(lines, string.format("%s %s %s", header_icon, group, summary))
+        
+        if not collapsed[group] then
+          for _, t in ipairs(filtered_items) do
+            local warning = themes.is_available(t) and "" or " 󰝧 "
+            local b = bookmarks[t] and ICON_BOOKMARK or " "
+            local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+            table.insert(lines, string.format("  %s%s %s %s", warning, b, s, t))
+          end
         end
       end
     end
   end
+  
   pcall(vim.api.nvim_buf_set_option, picker_buf, "modifiable", true)
   pcall(vim.api.nvim_buf_set_lines, picker_buf, 0, -1, false, lines)
   pcall(vim.api.nvim_buf_set_option, picker_buf, "modifiable", false)
@@ -332,7 +385,8 @@ local function open_search()
 end
 
 -- open picker
-function M.open(core)
+function M.open(core, opts)
+  opts = opts or {}
   core_ref = core
   state_ref = core.state
 
@@ -362,7 +416,7 @@ function M.open(core)
     col = picker_col,
     style = "minimal",
     border = "rounded",
-    title = "Raphael",
+    title = opts.exclude_configured and "Raphael - Other Themes" or "Raphael - Configured Themes",
   })
 
   state_ref.previous = vim.g.colors_name
@@ -370,6 +424,7 @@ function M.open(core)
   vim.keymap.set("n", "q", function()
     close_picker(true)
   end, { buffer = picker_buf })
+  
   vim.keymap.set("n", "<Esc>", function()
     close_picker(true)
   end, { buffer = picker_buf })
@@ -378,30 +433,57 @@ function M.open(core)
     local line = vim.api.nvim_get_current_line()
     local hdr = line:match("^%s*[^%s]+%s+(.+)%s*%(")
     if hdr then
+      -- Don't toggle if it's a group header
+      return
+    end
+    local theme = parse_line_theme(line)
+    if not theme then
+      vim.notify("No theme on this line", vim.log.levels.WARN)
+      return
+    end
+    if not themes.is_available(theme) then
+      vim.notify("Theme not installed: " .. theme, vim.log.levels.ERROR)
+      return
+    end
+    if core_ref and core_ref.apply then
+      pcall(core_ref.apply, theme)
+    end
+    state_ref.current = theme
+    if core_ref and core_ref.save_state then
+      pcall(core_ref.save_state)
+    end
+    close_picker(false)
+  end, { buffer = picker_buf })
+
+  -- 'c' to collapse/expand groups
+  vim.keymap.set("n", "c", function()
+    local line = vim.api.nvim_get_current_line()
+    local hdr = line:match("^%s*[^%s]+%s+(.+)%s*%(")
+    if hdr then
       collapsed[hdr] = not collapsed[hdr]
       state_ref.collapsed = vim.deepcopy(collapsed)
       if core_ref and core_ref.save_state then
         pcall(core_ref.save_state)
       end
-      render()
-      return
+      render(opts)
     end
-    local theme = parse_line_theme(line)
-    if theme and themes.is_available(theme) then
-      if core_ref and core_ref.apply then
-        pcall(core_ref.apply, theme)
-      end
-      state_ref.current = theme
-      if core_ref and core_ref.save_state then
-        pcall(core_ref.save_state)
-      end
-      close_picker(false)
-    else
-      vim.notify("No theme on this line", vim.log.levels.WARN)
-    end
-  end, { buffer = picker_buf })
+  end, { buffer = picker_buf, desc = "Collapse/expand group" })
 
   vim.keymap.set("n", "/", open_search, { buffer = picker_buf })
+
+  vim.keymap.set("n", "b", function()
+    local line = vim.api.nvim_get_current_line()
+    local theme = parse_line_theme(line)
+    if theme then
+      core_ref.toggle_bookmark(theme)
+      -- Refresh bookmarks state
+      bookmarks = {}
+      for _, b in ipairs(state_ref.bookmarks or {}) do
+        bookmarks[b] = true
+      end
+      render(opts)
+    end
+  end, { buffer = picker_buf, desc = "Toggle bookmark" })
 
   vim.api.nvim_create_autocmd("CursorMoved", {
     buffer = picker_buf,
@@ -412,7 +494,7 @@ function M.open(core)
     end,
   })
 
-  render()
+  render(opts)
 
   -- Show initial palette if there's a current theme
   if state_ref.current then
