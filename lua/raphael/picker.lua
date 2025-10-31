@@ -223,22 +223,18 @@ local function render(opts)
         table.insert(extras, theme)
       end
     end
-
     display_map = extras
   elseif only_configured then
   end
 
   local is_display_grouped = not vim.islist(display_map)
 
-  local bookmark_filtered = {}
-  for _, t in ipairs(state_ref.bookmarks or {}) do
-    if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
-      table.insert(bookmark_filtered, t)
-    end
-  end
+  local bookmark_candidates = state_ref.bookmarks or {}
+  local bookmark_filtered = search_query == "" and bookmark_candidates
+    or vim.fn.matchfuzzy(bookmark_candidates, search_query, { text = true })
   if #bookmark_filtered > 0 then
     local bookmark_icon = collapsed["__bookmarks"] and ICON_GROUP_COL or ICON_GROUP_EXP
-    table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
+    table.insert(lines, bookmark_icon .. " Bookmarks (" .. #bookmark_candidates .. ")")
     if not collapsed["__bookmarks"] then
       for _, t in ipairs(bookmark_filtered) do
         local warning = themes.is_available(t) and "" or " 󰝧 "
@@ -249,15 +245,12 @@ local function render(opts)
     end
   end
 
-  local recent_filtered = {}
-  for _, t in ipairs(state_ref.history or {}) do
-    if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
-      table.insert(recent_filtered, t)
-    end
-  end
+  local recent_candidates = state_ref.history or {}
+  local recent_filtered = search_query == "" and recent_candidates
+    or vim.fn.matchfuzzy(recent_candidates, search_query, { text = true })
   if #recent_filtered > 0 then
     local recent_icon = collapsed["__recent"] and ICON_GROUP_COL or ICON_GROUP_EXP
-    table.insert(lines, recent_icon .. " Recent (" .. #state_ref.history .. ")")
+    table.insert(lines, recent_icon .. " Recent (" .. #recent_candidates .. ")")
     if not collapsed["__recent"] then
       for _, t in ipairs(recent_filtered) do
         local warning = themes.is_available(t) and "" or " 󰝧 "
@@ -269,22 +262,20 @@ local function render(opts)
   end
 
   if not is_display_grouped then
-    for _, t in ipairs(display_map) do
-      if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
-        local warning = themes.is_available(t) and "" or " 󰝧 "
-        local b = bookmarks[t] and ICON_BOOKMARK or " "
-        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
-        table.insert(lines, string.format("%s%s %s %s", warning, b, s, t))
-      end
+    local flat_candidates = display_map
+    local flat_filtered = search_query == "" and flat_candidates
+      or vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
+    for _, t in ipairs(flat_filtered) do
+      local warning = themes.is_available(t) and "" or " 󰝧 "
+      local b = bookmarks[t] and ICON_BOOKMARK or " "
+      local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+      table.insert(lines, string.format("%s%s %s %s", warning, b, s, t))
     end
   else
     for group, items in pairs(display_map) do
-      local filtered_items = {}
-      for _, t in ipairs(items) do
-        if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
-          table.insert(filtered_items, t)
-        end
-      end
+      local group_candidates = items
+      local filtered_items = search_query == "" and group_candidates
+        or vim.fn.matchfuzzy(group_candidates, search_query, { text = true })
 
       if #filtered_items > 0 then
         local header_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
