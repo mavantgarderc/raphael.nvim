@@ -148,6 +148,7 @@ function M.apply(theme, from_manual)
 	M.state.current = theme
 	M.add_to_history(theme)
 
+	-- Only update saved theme if manually applied (from picker)
 	if from_manual then
 		M.state.saved = theme
 	end
@@ -292,7 +293,6 @@ function M.setup(user_config)
 
 	-- Load dependencies
 	local themes = require("raphael.themes")
-	themes.refresh() -- Detect installed on startup
 
 	-- Set filetype_themes (user override replaces)
 	themes.filetype_themes = user_config.filetype_themes or M.defaults.filetype_themes
@@ -303,48 +303,8 @@ function M.setup(user_config)
 	themes.theme_map = user_config.theme_map or all_installed
 
 	-- NO automatic extras/Other group - only show what's configured
-	-- Validate configured themes and mark unavailable ones
-	local all_configured = themes.get_all_themes()
-	local unavailable = {}
-	for _, theme in ipairs(all_configured) do
-		if not themes.is_available(theme) then
-			table.insert(unavailable, theme)
-		end
-	end
-
-	if #unavailable > 0 then
-		vim.notify(
-			"raphael: Some themes in theme_map are not installed (marked with 󰝧 ): "
-				.. table.concat(unavailable, ", "),
-			vim.log.levels.WARN
-		)
-	end
-
-	-- Validate filetype_themes and notify about unavailable ones
-	local invalid_ft = {}
-	for ft, theme in pairs(themes.filetype_themes) do
-		if not themes.is_available(theme) then
-			table.insert(invalid_ft, string.format("%s=%s", ft, theme))
-		end
-	end
-	if #invalid_ft > 0 then
-		vim.notify(
-			"raphael: Some filetype themes are not installed (will use default): " .. table.concat(invalid_ft, ", "),
-			vim.log.levels.WARN
-		)
-	end
 
 	M.load_state()
-
-	-- Validate saved theme on load
-	if M.state.saved and not themes.is_available(M.state.saved) then
-		vim.notify(
-			"raphael: Saved theme '" .. M.state.saved .. "' not available, falling back to default",
-			vim.log.levels.WARN
-		)
-		M.state.saved = M.config.default_theme
-		M.save_state()
-	end
 
 	vim.g.raphael_auto_theme = M.state.auto_apply == true
 
@@ -356,6 +316,56 @@ function M.setup(user_config)
 
 	-- Setup keymaps
 	require("raphael.keymaps").setup(M)
+
+	-- Delayed refresh and validation after startup
+	vim.api.nvim_create_autocmd("VimEnter", {
+		once = true,
+		callback = function()
+			themes.refresh() -- Re-run refresh now that all plugins should be loaded
+
+			-- Validate configured themes and mark unavailable ones
+			local all_configured = themes.get_all_themes()
+			local unavailable = {}
+			for _, theme in ipairs(all_configured) do
+				if not themes.is_available(theme) then
+					table.insert(unavailable, theme)
+				end
+			end
+
+			if #unavailable > 0 then
+				vim.notify(
+					"raphael: Some themes in theme_map are not installed (marked with 󰝧 ): "
+						.. table.concat(unavailable, ", "),
+					vim.log.levels.WARN
+				)
+			end
+
+			-- Validate filetype_themes and notify about unavailable ones
+			local invalid_ft = {}
+			for ft, theme in pairs(themes.filetype_themes) do
+				if not themes.is_available(theme) then
+					table.insert(invalid_ft, string.format("%s=%s", ft, theme))
+				end
+			end
+			if #invalid_ft > 0 then
+				vim.notify(
+					"raphael: Some filetype themes are not installed (will use default): "
+						.. table.concat(invalid_ft, ", "),
+					vim.log.levels.WARN
+				)
+			end
+
+			-- Validate saved theme after full refresh
+			if M.state.saved and not themes.is_available(M.state.saved) then
+				vim.notify(
+					"raphael: Saved theme '" .. M.state.saved .. "' not available, falling back to default",
+					vim.log.levels.WARN
+				)
+				M.state.saved = M.config.default_theme
+				M.save_state()
+			end
+		end,
+	})
 
 	-- Track if first filetype event has occurred
 	local first_ft_fired = false
