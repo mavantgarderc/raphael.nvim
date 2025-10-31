@@ -16,6 +16,7 @@ local previewed
 local collapsed = {}
 local bookmarks = {}
 local search_query = ""
+local picker_opts = {}
 
 -- icons / glyphs
 local ICON_BOOKMARK = ""
@@ -214,7 +215,8 @@ end
 
 -- render picker
 local function render(opts)
-  opts = opts or {}
+  opts = opts or picker_opts
+  picker_opts = opts
   local only_configured = opts.only_configured or false
   local exclude_configured = opts.exclude_configured or false
 
@@ -247,7 +249,7 @@ local function render(opts)
     -- This means ONLY themes in user's config will show
   end
 
-  local is_display_grouped = not vim.tbl_islist(display_map)
+  local is_display_grouped = not vim.islist(display_map)
 
   if not is_display_grouped then
     -- Flat: no headers, just list all
@@ -296,7 +298,12 @@ end
 -- close picker
 local function close_picker(revert)
   if revert and state_ref and state_ref.previous and themes.is_available(state_ref.previous) then
+    -- Revert to previous theme
     pcall(vim.cmd.colorscheme, state_ref.previous)
+    -- Mark this revert as a manual apply so it gets saved
+    if core_ref and core_ref.apply then
+      core_ref.apply(state_ref.previous, true)
+    end
   end
   if picker_win and vim.api.nvim_win_is_valid(picker_win) then
     pcall(vim.api.nvim_win_close, picker_win, true)
@@ -310,6 +317,7 @@ local function close_picker(revert)
   picker_buf, picker_win, palette_buf, palette_win, search_buf, search_win = nil, nil, nil, nil, nil, nil
   search_query = ""
   previewed = nil
+  picker_opts = {}
 end
 
 -- preview
@@ -387,6 +395,7 @@ end
 -- open picker
 function M.open(core, opts)
   opts = opts or {}
+  picker_opts = opts
   core_ref = core
   state_ref = core.state
 
@@ -433,7 +442,7 @@ function M.open(core, opts)
     local line = vim.api.nvim_get_current_line()
     local hdr = line:match("^%s*[^%s]+%s+(.+)%s*%(")
     if hdr then
-      -- Don't toggle if it's a group header
+      -- Don't apply if it's a group header
       return
     end
     local theme = parse_line_theme(line)
@@ -445,10 +454,12 @@ function M.open(core, opts)
       vim.notify("Theme not installed: " .. theme, vim.log.levels.ERROR)
       return
     end
+    -- Manual apply from picker - this WILL be saved
     if core_ref and core_ref.apply then
-      pcall(core_ref.apply, theme)
+      pcall(core_ref.apply, theme, true)
     end
     state_ref.current = theme
+    state_ref.saved = theme
     if core_ref and core_ref.save_state then
       pcall(core_ref.save_state)
     end

@@ -24,7 +24,7 @@ end
 
 function M.get_all_themes()
   local all = {}
-  if vim.tbl_islist(M.theme_map) then
+  if vim.islist(M.theme_map) then
     -- Flat list
     all = vim.deepcopy(M.theme_map)
   else
