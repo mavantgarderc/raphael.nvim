@@ -16,6 +16,8 @@ local picker_opts = {}
 local header_lines = {}
 local last_cursor = {}
 local RENDER_DEBOUNCE_MS = 50
+local ANIM_STEPS = 5
+local ANIM_INTERVAL = 15
 
 local ICON_BOOKMARK = "  "
 local ICON_CURRENT_ON = "  "
@@ -350,7 +352,10 @@ local function render_internal(opts)
         table.insert(lines, string.format("%s %s %s", header_icon, group, summary))
 
         if not collapsed[group] then
-          for _, t in ipairs(filtered_items) do
+          local ratio = state_ref._anim_ratio or 1
+          local visible_count = math.max(1, math.floor(#filtered_items * ratio))
+          for i = 1, visible_count do
+            local t = filtered_items[i]
             local warning = themes.is_available(t) and "" or " 󰝧 "
             local b = bookmarks[t] and ICON_BOOKMARK or " "
             local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
@@ -360,6 +365,13 @@ local function render_internal(opts)
       end
     end
   end
+
+    header_lines = {}
+    for i, line in ipairs(lines) do
+        if parse_line_header(line) then
+            table.insert(header_lines, i)
+        end
+    end
 
   pcall(vim.api.nvim_set_option_value, "modifiable", true, { buf = picker_buf })
   pcall(vim.api.nvim_buf_set_lines, picker_buf, 0, -1, false, lines)
@@ -383,6 +395,46 @@ end)
 local function render(opts)
   render_debounced(opts)
 end
+
+local function animate_steps(fn)
+  local step = 1
+  ---@diagnostic disable-next-line: undefined-field
+  local timer = vim.loop.new_timer()
+  timer:start(0, ANIM_INTERVAL, function()
+    vim.schedule(function()
+      local keep_going = fn(step)
+      if not keep_going or step >= ANIM_STEPS then
+        timer:stop()
+        timer:close()
+      end
+      step = step + 1
+    end)
+  end)
+end
+
+local function toggle_group(group)
+  if not group then return end
+  collapsed[group] = not collapsed[group]
+  if ANIM_STEPS <= 1 then
+    render()
+    return
+  end
+
+  local target_state = collapsed[group]
+  local step_fn = function(frame)
+    if target_state then
+      local ratio = 1 - (frame / ANIM_STEPS)
+      state_ref._anim_ratio = ratio
+    else
+      local ratio = (frame / ANIM_STEPS)
+      state_ref._anim_ratio = ratio
+    end
+    render()
+    return true
+  end
+  animate_steps(step_fn)
+end
+
 
 local function close_picker(revert)
   if revert and state_ref and state_ref.previous and themes.is_available(state_ref.previous) then
