@@ -15,6 +15,7 @@ local search_query = ""
 local picker_opts = {}
 local header_lines = {}
 local last_cursor = {}
+local RENDER_DEBOUNCE_MS = 50
 
 local ICON_BOOKMARK = "  "
 local ICON_CURRENT_ON = "  "
@@ -206,7 +207,9 @@ function M.update_palette(theme)
   end
 end
 
-local function render(opts)
+last_cursor = last_cursor or {}
+
+local function render_internal(opts)
   opts = opts or picker_opts
   picker_opts = opts
   local only_configured = opts.only_configured or false
@@ -369,6 +372,16 @@ local function render(opts)
     end
     pcall(vim.api.nvim_win_set_cursor, picker_win, { restore_line, 0 })
   end
+end
+
+local render_debounced = debounce(RENDER_DEBOUNCE_MS, function(opts)
+  vim.schedule(function()
+    pcall(render_internal, opts)
+  end)
+end)
+
+local function render(opts)
+  render_debounced(opts)
 end
 
 local function close_picker(revert)
