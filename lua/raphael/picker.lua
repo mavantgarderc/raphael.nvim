@@ -212,6 +212,8 @@ local function render_internal(opts)
   picker_opts = opts
   local only_configured = opts.only_configured or false
   local exclude_configured = opts.exclude_configured or false
+  local picker_ns = vim.api.nvim_create_namespace("raphael_picker_content")
+  pcall(vim.api.nvim_buf_clear_namespace, picker_buf, picker_ns, 0, -1)
 
   if only_configured and exclude_configured then
     return
@@ -493,16 +495,37 @@ local function open_search()
   pcall(vim.api.nvim_set_current_win, search_win)
   vim.cmd("startinsert")
 
+  local ns = vim.api.nvim_create_namespace("raphael_search_match")
+
   vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
     buffer = search_buf,
     callback = function()
       local lines = vim.api.nvim_buf_get_lines(search_buf, 0, -1, false)
       search_query = trim(table.concat(lines, "\n"):gsub("^" .. ICON_SEARCH .. " ", ""))
-      render()
+      render(picker_opts)
+
+      if picker_buf and vim.api.nvim_buf_is_valid(picker_buf) then
+        vim.api.nvim_buf_clear_namespace(picker_buf, ns, 0, -1)
+        if search_query ~= "" then
+          local picker_lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+          local query_lower = search_query:lower()
+          for i, line in ipairs(picker_lines) do
+            local start_idx = 1
+            while true do
+              local s, e = line:lower():find(query_lower, start_idx, true)
+              if not s then break end
+              vim.api.nvim_buf_set_extmark(picker_buf, ns, i - 1, s - 1, { end_col = e, hl_group = "Search" })
+              start_idx = e + 1
+            end
+          end
+        end
+      end
     end,
   })
 
   vim.keymap.set("i", "<Esc>", function()
+    search_query = ""
+    render(picker_opts)
     if search_win and vim.api.nvim_win_is_valid(search_win) then
       pcall(vim.api.nvim_win_close, search_win, true)
     end
@@ -522,6 +545,7 @@ local function open_search()
     if picker_win and vim.api.nvim_win_is_valid(picker_win) then
       pcall(vim.api.nvim_set_current_win, picker_win)
     end
+    render(picker_opts)
   end, { buffer = search_buf })
 end
 
