@@ -35,6 +35,22 @@ local PALETTE_HL = {
 
 local palette_hl_cache = {}
 
+local function safe_call(fn, ...)
+  local ok, res1, res2, res3 = pcall(fn, ...)
+  if not ok then
+    return nil
+  end
+  return res1 or res2 or res3
+end
+
+local function safe_cmd(cmd_fn, ...)
+  local ok, err = pcall(cmd_fn, ...)
+  if not ok then
+    return nil, err
+  end
+  return true
+end
+
 local function trim(s)
   return (s or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
@@ -112,22 +128,22 @@ end
 function M.update_palette(theme)
   palette_hl_cache = {}
   if not theme or not themes.is_available(theme) then
-    if palette_win and vim.api.nvim_win_is_valid(palette_win) then
+    if palette_win and safe_call(vim.api.nvim_win_is_valid, palette_win) then
       pcall(vim.api.nvim_win_close, palette_win, true)
     end
     palette_win, palette_buf = nil, nil
     return
   end
 
-  if not picker_win or not vim.api.nvim_win_is_valid(picker_win) or not picker_w then
+  if not picker_win or not safe_call(vim.api.nvim_win_is_valid, picker_win) or not picker_w then
     return
   end
 
-  if not palette_buf or not vim.api.nvim_buf_is_valid(palette_buf) then
-    palette_buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_set_option_value("buftype", "nofile", { buf = palette_buf })
-    vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = palette_buf })
-    vim.api.nvim_set_option_value("modifiable", false, { buf = palette_buf })
+  if not palette_buf or not safe_call(vim.api.nvim_buf_is_valid, palette_buf) then
+    palette_buf = safe_call(vim.api.nvim_create_buf, false, true)
+    pcall(vim.api.nvim_set_option_value, "buftype", "nofile", { buf = palette_buf })
+    pcall(vim.api.nvim_set_option_value, "bufhidden", "wipe", { buf = palette_buf })
+    pcall(vim.api.nvim_set_option_value, "modifiable", false, { buf = palette_buf })
   end
 
   local blocks = {}
@@ -135,7 +151,7 @@ function M.update_palette(theme)
     blocks[i] = BLOCK_CHAR
   end
   local blocks_str = table.concat(blocks, " ")
-  local display_w = vim.fn.strdisplaywidth(blocks_str)
+  local display_w = safe_call(vim.fn.strdisplaywidth, blocks_str) or 0
   local pad = math.max(math.floor((picker_w - display_w) / 2), 0)
   local line = string.rep(" ", pad) .. blocks_str
 
@@ -143,8 +159,8 @@ function M.update_palette(theme)
   pcall(vim.api.nvim_buf_set_lines, palette_buf, 0, -1, false, { line })
   pcall(vim.api.nvim_set_option_value, "modifiable", false, { buf = palette_buf })
 
-  local bufline = (vim.api.nvim_buf_get_lines(palette_buf, 0, 1, false) or { "" })[1] or ""
-  local ns = vim.api.nvim_create_namespace("raphael_palette")
+  local bufline = (safe_call(vim.api.nvim_buf_get_lines, palette_buf, 0, 1, false) or { "" })[1] or ""
+  local ns = safe_call(vim.api.nvim_create_namespace, "raphael_palette")
   pcall(vim.api.nvim_buf_clear_namespace, palette_buf, ns, 0, -1)
 
   for i, hl_name in ipairs(PALETTE_HL) do
@@ -163,7 +179,7 @@ function M.update_palette(theme)
           end
           occurrence = occurrence + 1
           if occurrence == i then
-            vim.api.nvim_buf_set_extmark(palette_buf, ns, 0, s - 1, {
+            pcall(vim.api.nvim_buf_set_extmark, palette_buf, ns, 0, s - 1, {
               end_col = e,
               hl_group = gname,
               strict = false,
@@ -180,7 +196,7 @@ function M.update_palette(theme)
   local pal_col = picker_col
   local pal_width = picker_w
 
-  if palette_win and vim.api.nvim_win_is_valid(palette_win) then
+  if palette_win and safe_call(vim.api.nvim_win_is_valid, palette_win) then
     pcall(vim.api.nvim_win_set_buf, palette_win, palette_buf)
     pcall(vim.api.nvim_win_set_config, palette_win, {
       relative = "editor",
@@ -191,7 +207,7 @@ function M.update_palette(theme)
       style = "minimal",
     })
   else
-    palette_win = vim.api.nvim_open_win(palette_buf, false, {
+    palette_win = safe_call(vim.api.nvim_open_win, palette_buf, false, {
       relative = "editor",
       width = pal_width,
       height = 1,
@@ -214,7 +230,7 @@ local function render(opts)
     return
   end
 
-  if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then
+  if not picker_buf or not safe_call(vim.api.nvim_buf_is_valid, picker_buf) then
     return
   end
   local lines = {}
@@ -236,17 +252,17 @@ local function render(opts)
 
   local is_display_grouped = not vim.islist(display_map)
 
-  local sort_mode = state_ref.sort_mode or core_ref.config.sort_mode or "alpha"
+  local sort_mode = (state_ref and state_ref.sort_mode) or (core_ref and core_ref.config.sort_mode) or "alpha"
 
   local bookmark_filtered = {}
-  for _, t in ipairs(state_ref.bookmarks or {}) do
+  for _, t in ipairs((state_ref and state_ref.bookmarks) or {}) do
     if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
       table.insert(bookmark_filtered, t)
     end
   end
   if #bookmark_filtered > 0 then
     local bookmark_icon = collapsed["__bookmarks"] and ICON_GROUP_COL or ICON_GROUP_EXP
-    table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
+    table.insert(lines, bookmark_icon .. " Bookmarks (" .. #((state_ref and state_ref.bookmarks) or {}) .. ")")
     if not collapsed["__bookmarks"] then
       for _, t in ipairs(bookmark_filtered) do
         local warning = themes.is_available(t) and "" or " 󰝧 "
@@ -258,14 +274,14 @@ local function render(opts)
   end
 
   local recent_filtered = {}
-  for _, t in ipairs(state_ref.history or {}) do
+  for _, t in ipairs((state_ref and state_ref.history) or {}) do
     if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
       table.insert(recent_filtered, t)
     end
   end
   if #recent_filtered > 0 then
     local recent_icon = collapsed["__recent"] and ICON_GROUP_COL or ICON_GROUP_EXP
-    table.insert(lines, recent_icon .. " Recent (" .. #state_ref.history .. ")")
+    table.insert(lines, recent_icon .. " Recent (" .. #((state_ref and state_ref.history) or {}) .. ")")
     if not collapsed["__recent"] then
       for _, t in ipairs(recent_filtered) do
         local warning = themes.is_available(t) and "" or " 󰝧 "
@@ -281,18 +297,18 @@ local function render(opts)
       table.sort(filtered, function(a, b) return a:lower() < b:lower() end)
     elseif sort_mode == "recent" then
       table.sort(filtered, function(a, b)
-        local idx_a = vim.fn.index(state_ref.history or {}, a) or -1
-        local idx_b = vim.fn.index(state_ref.history or {}, b) or -1
+        local idx_a = safe_call(vim.fn.index, (state_ref and state_ref.history) or {}, a) or -1
+        local idx_b = safe_call(vim.fn.index, (state_ref and state_ref.history) or {}, b) or -1
         return idx_a > idx_b
       end)
     elseif sort_mode == "usage" then
       table.sort(filtered, function(a, b)
-        local count_a = (state_ref.usage or {})[a] or 0
-        local count_b = (state_ref.usage or {})[b] or 0
+        local count_a = ((state_ref and state_ref.usage) or {})[a] or 0
+        local count_b = ((state_ref and state_ref.usage) or {})[b] or 0
         return count_a > count_b
       end)
     end
-    local custom_sorts = core_ref.config.custom_sorts or {}
+    local custom_sorts = (core_ref and core_ref.config and core_ref.config.custom_sorts) or {}
     local custom_func = custom_sorts[sort_mode]
     if custom_func then
       table.sort(filtered, custom_func)
@@ -301,7 +317,7 @@ local function render(opts)
 
   if not is_display_grouped then
     local flat_candidates = display_map
-    local flat_filtered = search_query == "" and flat_candidates or vim.fn.matchfuzzy(flat_candidates, search_query, {text = true})
+    local flat_filtered = search_query == "" and flat_candidates or safe_call(vim.fn.matchfuzzy, flat_candidates, search_query, { text = true }) or {}
     sort_filtered(flat_filtered)
     for _, t in ipairs(flat_filtered) do
       local warning = themes.is_available(t) and "" or " 󰝧 "
@@ -312,7 +328,7 @@ local function render(opts)
   else
     for group, items in pairs(display_map) do
       local group_candidates = items
-      local filtered_items = search_query == "" and group_candidates or vim.fn.matchfuzzy(group_candidates, search_query, {text = true})
+      local filtered_items = search_query == "" and group_candidates or safe_call(vim.fn.matchfuzzy, group_candidates, search_query, { text = true }) or {}
       sort_filtered(filtered_items)
 
       if #filtered_items > 0 then
@@ -341,16 +357,16 @@ local function close_picker(revert)
   if revert and state_ref and state_ref.previous and themes.is_available(state_ref.previous) then
     pcall(vim.cmd.colorscheme, state_ref.previous)
     if core_ref and core_ref.apply then
-      core_ref.apply(state_ref.previous, true)
+      pcall(core_ref.apply, state_ref.previous, true)
     end
   end
-  if picker_win and vim.api.nvim_win_is_valid(picker_win) then
+  if picker_win and safe_call(vim.api.nvim_win_is_valid, picker_win) then
     pcall(vim.api.nvim_win_close, picker_win, true)
   end
-  if palette_win and vim.api.nvim_win_is_valid(palette_win) then
+  if palette_win and safe_call(vim.api.nvim_win_is_valid, palette_win) then
     pcall(vim.api.nvim_win_close, palette_win, true)
   end
-  if search_win and vim.api.nvim_win_is_valid(search_win) then
+  if search_win and safe_call(vim.api.nvim_win_is_valid, search_win) then
     pcall(vim.api.nvim_win_close, search_win, true)
   end
   picker_buf, picker_win, palette_buf, palette_win, search_buf, search_win = nil, nil, nil, nil, nil, nil
@@ -373,17 +389,17 @@ end
 local preview = debounce(100, do_preview)
 
 local function open_search()
-  if not picker_win or not vim.api.nvim_win_is_valid(picker_win) then
+  if not picker_win or not safe_call(vim.api.nvim_win_is_valid, picker_win) then
     return
   end
-  if search_win and vim.api.nvim_win_is_valid(search_win) then
+  if search_win and safe_call(vim.api.nvim_win_is_valid, search_win) then
     pcall(vim.api.nvim_set_current_win, search_win)
     return
   end
 
-  search_buf = vim.api.nvim_create_buf(false, true)
+  search_buf = safe_call(vim.api.nvim_create_buf, false, true)
   local s_row = picker_row + picker_h - 1
-  search_win = vim.api.nvim_open_win(search_buf, true, {
+  search_win = safe_call(vim.api.nvim_open_win, search_buf, true, {
     relative = "editor",
     width = picker_w,
     height = 1,
@@ -393,6 +409,7 @@ local function open_search()
     border = "rounded",
   })
   pcall(vim.api.nvim_set_option_value, "buftype", "prompt", { buf = search_buf })
+  ---@diagnostic disable-next-line: param-type-mismatch
   vim.fn.prompt_setprompt(search_buf, ICON_SEARCH .. " ")
   pcall(vim.api.nvim_set_current_win, search_win)
   vim.cmd("startinsert")
@@ -400,30 +417,30 @@ local function open_search()
   vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
     buffer = search_buf,
     callback = function()
-      local lines = vim.api.nvim_buf_get_lines(search_buf, 0, -1, false)
+      local lines = safe_call(vim.api.nvim_buf_get_lines, search_buf, 0, -1, false) or {}
       search_query = trim(table.concat(lines, "\n"):gsub("^" .. ICON_SEARCH .. " ", ""))
       render()
     end,
   })
 
   vim.keymap.set("i", "<Esc>", function()
-    if search_win and vim.api.nvim_win_is_valid(search_win) then
+    if search_win and safe_call(vim.api.nvim_win_is_valid, search_win) then
       pcall(vim.api.nvim_win_close, search_win, true)
     end
     search_buf, search_win = nil, nil
     vim.cmd("stopinsert")
-    if picker_win and vim.api.nvim_win_is_valid(picker_win) then
+    if picker_win and safe_call(vim.api.nvim_win_is_valid, picker_win) then
       pcall(vim.api.nvim_set_current_win, picker_win)
     end
   end, { buffer = search_buf })
 
   vim.keymap.set("i", "<CR>", function()
-    if search_win and vim.api.nvim_win_is_valid(search_win) then
+    if search_win and safe_call(vim.api.nvim_win_is_valid, search_win) then
       pcall(vim.api.nvim_win_close, search_win, true)
     end
     search_buf, search_win = nil, nil
     vim.cmd("stopinsert")
-    if picker_win and vim.api.nvim_win_is_valid(picker_win) then
+    if picker_win and safe_call(vim.api.nvim_win_is_valid, picker_win) then
       pcall(vim.api.nvim_set_current_win, picker_win)
     end
   end, { buffer = search_buf })
@@ -443,11 +460,11 @@ function M.open(core, opts)
   collapsed["__bookmarks"] = collapsed["__bookmarks"] or false
   collapsed["__recent"] = collapsed["__recent"] or false
 
-  if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then
-    picker_buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = picker_buf })
-    vim.api.nvim_set_option_value("buftype", "nofile", { buf = picker_buf })
-    vim.api.nvim_set_option_value("filetype", "raphael_picker", { buf = picker_buf })
+  if not picker_buf or not safe_call(vim.api.nvim_buf_is_valid, picker_buf) then
+    picker_buf = safe_call(vim.api.nvim_create_buf, false, true)
+    pcall(vim.api.nvim_set_option_value, "bufhidden", "wipe", { buf = picker_buf })
+    pcall(vim.api.nvim_set_option_value, "buftype", "nofile", { buf = picker_buf })
+    pcall(vim.api.nvim_set_option_value, "filetype", "raphael_picker", { buf = picker_buf })
   end
 
   picker_h = math.max(6, math.floor(vim.o.lines * 0.6))
@@ -455,11 +472,11 @@ function M.open(core, opts)
   picker_row = math.floor((vim.o.lines - picker_h) / 2)
   picker_col = math.floor((vim.o.columns - picker_w) / 2)
 
-  local sort_mode = state_ref.sort_mode or core_ref.config.sort_mode or "alpha"
+  local sort_mode = (state_ref and state_ref.sort_mode) or (core_ref and core_ref.config.sort_mode) or "alpha"
   local base_title = opts.exclude_configured and "Raphael - Other Themes" or "Raphael - Configured Themes"
   local title = base_title .. " (Sort: " .. sort_mode .. ")"
 
-  picker_win = vim.api.nvim_open_win(picker_buf, true, {
+  picker_win = safe_call(vim.api.nvim_open_win, picker_buf, true, {
     relative = "editor",
     width = picker_w,
     height = picker_h,
@@ -481,7 +498,7 @@ function M.open(core, opts)
   end, { buffer = picker_buf })
 
   vim.keymap.set("n", "<CR>", function()
-    local line = vim.api.nvim_get_current_line()
+    local line = safe_call(vim.api.nvim_get_current_line) or ""
     local hdr = parse_line_header(line)
     if hdr then
       return
@@ -507,7 +524,7 @@ function M.open(core, opts)
   end, { buffer = picker_buf })
 
   vim.keymap.set("n", "c", function()
-    local line = vim.api.nvim_get_current_line()
+    local line = safe_call(vim.api.nvim_get_current_line) or ""
     local hdr = parse_line_header(line)
     if hdr then
       vim.notify("Detected header: " .. hdr, vim.log.levels.INFO)
@@ -529,20 +546,21 @@ function M.open(core, opts)
 
   vim.keymap.set("n", "s", function()
     local sort_modes = {"alpha", "recent", "usage"}
-    local idx = vim.fn.index(sort_modes, state_ref.sort_mode or "alpha") + 1
+    local idx = safe_call(vim.fn.index, sort_modes, (state_ref and state_ref.sort_mode) or "alpha") or 0
+    idx = idx + 1
     state_ref.sort_mode = sort_modes[(idx % #sort_modes) + 1]
     if core_ref and core_ref.save_state then
       pcall(core_ref.save_state)
     end
     local new_title = base_title .. " (Sort: " .. state_ref.sort_mode .. ")"
-    vim.api.nvim_win_set_config(picker_win, {title = new_title})
+    pcall(vim.api.nvim_win_set_config, picker_win, {title = new_title})
     render(opts)
   end, { buffer = picker_buf, desc = "Cycle sort mode" })
 
   vim.keymap.set("n", "/", open_search, { buffer = picker_buf })
 
   vim.keymap.set("n", "b", function()
-    local line = vim.api.nvim_get_current_line()
+    local line = safe_call(vim.api.nvim_get_current_line) or ""
     local theme = parse_line_theme(line)
     if theme then
       core_ref.toggle_bookmark(theme)
@@ -557,7 +575,7 @@ function M.open(core, opts)
   vim.api.nvim_create_autocmd("CursorMoved", {
     buffer = picker_buf,
     callback = function()
-      local line = vim.api.nvim_get_current_line()
+      local line = safe_call(vim.api.nvim_get_current_line) or ""
       local theme = parse_line_theme(line)
       preview(theme)
     end,
