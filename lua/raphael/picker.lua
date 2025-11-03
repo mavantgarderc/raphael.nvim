@@ -51,6 +51,28 @@ local function safe_cmd(cmd_fn, ...)
   return true
 end
 
+local function make_debounced_save(ms)
+  ms = ms or 100
+  local timer = nil
+  return function()
+    if timer then
+      ---@diagnostic disable-next-line: undefined-field
+      pcall(vim.loop.timer_stop, timer)
+      ---@diagnostic disable-next-line: undefined-field
+      pcall(vim.loop.close, timer)
+      timer = nil
+    end
+    timer = vim.defer_fn(function()
+      if core_ref and core_ref.save_state then
+        pcall(core_ref.save_state)
+      end
+      timer = nil
+    end, ms)
+  end
+end
+
+local debounced_save_state = make_debounced_save(100)
+
 local function trim(s)
   return (s or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
@@ -517,9 +539,7 @@ function M.open(core, opts)
     end
     state_ref.current = theme
     state_ref.saved = theme
-    if core_ref and core_ref.save_state then
-      pcall(core_ref.save_state)
-    end
+    debounced_save_state()
     close_picker(false)
   end, { buffer = picker_buf })
 
@@ -535,9 +555,7 @@ function M.open(core, opts)
       end
       collapsed[hdr] = not collapsed[hdr]
       state_ref.collapsed = vim.deepcopy(collapsed)
-      if core_ref and core_ref.save_state then
-        pcall(core_ref.save_state)
-      end
+      debounced_save_state()
       render(opts)
     else
       vim.notify("No header detected on line", vim.log.levels.WARN)
@@ -549,9 +567,7 @@ function M.open(core, opts)
     local idx = safe_call(vim.fn.index, sort_modes, (state_ref and state_ref.sort_mode) or "alpha") or 0
     idx = idx + 1
     state_ref.sort_mode = sort_modes[(idx % #sort_modes) + 1]
-    if core_ref and core_ref.save_state then
-      pcall(core_ref.save_state)
-    end
+    debounced_save_state()
     local new_title = base_title .. " (Sort: " .. state_ref.sort_mode .. ")"
     pcall(vim.api.nvim_win_set_config, picker_win, {title = new_title})
     render(opts)
@@ -568,6 +584,7 @@ function M.open(core, opts)
       for _, b in ipairs(state_ref.bookmarks or {}) do
         bookmarks[b] = true
       end
+      debounced_save_state()
       render(opts)
     end
   end, { buffer = picker_buf, desc = "Toggle bookmark" })
