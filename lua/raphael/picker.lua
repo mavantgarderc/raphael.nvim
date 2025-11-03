@@ -14,13 +14,13 @@ local bookmarks = {}
 local search_query = ""
 local picker_opts = {}
 
-local ICON_BOOKMARK = " "
-local ICON_CURRENT_ON = " "
-local ICON_CURRENT_OFF = " "
-local ICON_GROUP_EXP = " "
-local ICON_GROUP_COL = " "
-local BLOCK_CHAR = "󱡌 "
-local ICON_SEARCH = " "
+local ICON_BOOKMARK = "  "
+local ICON_CURRENT_ON = "  "
+local ICON_CURRENT_OFF = "  "
+local ICON_GROUP_EXP = "  "
+local ICON_GROUP_COL = "  "
+local BLOCK_CHAR = " 󱡌 "
+local ICON_SEARCH = "   "
 
 local PALETTE_HL = {
   "Normal",
@@ -74,7 +74,9 @@ local function debounce(ms, fn)
   return function(...)
     local args = { ... }
     if timer then
+      ---@diagnostic disable-next-line: undefined-field
       pcall(vim.loop.timer_stop, timer)
+      ---@diagnostic disable-next-line: undefined-field
       pcall(vim.loop.close, timer)
       timer = nil
     end
@@ -142,7 +144,8 @@ function M.update_palette(theme)
   pcall(vim.api.nvim_set_option_value, "modifiable", false, { buf = palette_buf })
 
   local bufline = (vim.api.nvim_buf_get_lines(palette_buf, 0, 1, false) or { "" })[1] or ""
-  pcall(vim.api.nvim_buf_clear_namespace, palette_buf, -1, 0, -1)
+  local ns = vim.api.nvim_create_namespace("palette_highlight")
+  pcall(vim.api.nvim_buf_clear_namespace, palette_buf, ns, 0, -1)
 
   for i, hl_name in ipairs(PALETTE_HL) do
     local hl = get_hl_rgb(hl_name)
@@ -160,7 +163,10 @@ function M.update_palette(theme)
           end
           occurrence = occurrence + 1
           if occurrence == i then
-            pcall(vim.api.nvim_buf_add_highlight, palette_buf, -1, gname, 0, s - 1, e)
+            pcall(vim.api.nvim_buf_set_extmark, palette_buf, ns, 0, s - 1, {
+              end_col = e,
+              hl_group = gname,
+            })
             break
           end
           search_pos = e + 1
@@ -425,7 +431,7 @@ function M.open(core, opts)
     col = picker_col,
     style = "minimal",
     border = "rounded",
-    title = opts.exclude_configured and "Raphael - Other Themes" or "Raphael - Configured Themes",
+    title = opts.exclude_configured and " Raphael: Other Themes " or " Raphael: Configured Themes ",
   })
 
   state_ref.previous = vim.g.colors_name

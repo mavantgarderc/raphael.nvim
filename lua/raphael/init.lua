@@ -1,5 +1,7 @@
 local M = {}
 
+local themes = require("raphael.themes")
+
 M.defaults = {
   leader = "<leader>t",
   mappings = { picker = "p", next = ">", previous = "<", random = "r" },
@@ -13,6 +15,7 @@ M.state = nil
 M.manual_apply = false
 
 local function async_write(path, contents)
+  ---@diagnostic disable-next-line: undefined-field
   vim.loop.fs_open(path, "w", 438, function(err, fd)
     if err then
       vim.schedule(function()
@@ -20,12 +23,14 @@ local function async_write(path, contents)
       end)
       return
     end
+    ---@diagnostic disable-next-line: undefined-field
     vim.loop.fs_write(fd, contents, -1, function(write_err)
       if write_err and write_err ~= 0 then
         vim.schedule(function()
           vim.notify("raphael: failed to write state (write): " .. tostring(write_err), vim.log.levels.WARN)
         end)
       end
+      ---@diagnostic disable-next-line: undefined-field
       vim.loop.fs_close(fd)
     end)
   end)
@@ -109,7 +114,6 @@ function M.add_to_history(theme)
 end
 
 function M.apply(theme, from_manual)
-  local themes = require("raphael.themes")
   if not theme or not themes.is_available(theme) then
     vim.notify("raphael: theme not available: " .. tostring(theme), vim.log.levels.WARN)
     return
@@ -175,7 +179,6 @@ function M.open_picker(opts)
 end
 
 function M.refresh_and_reload()
-  local themes = require("raphael.themes")
   themes.refresh()
   if M.state.current and themes.is_available(M.state.current) then
     M.apply(M.state.current, false)
@@ -217,12 +220,12 @@ function M.show_help()
     "Theme Persistence:",
     "  - Manual selections saved for next session",
     "  - Auto-apply changes not saved",
-    "  - Last 5 themes kept in history",
+    "  - Last 10 themes kept in history",
   }
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, help_lines)
-  vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
-  vim.api.nvim_buf_set_option(buf, "modifiable", false)
+  vim.api.nvim_set_option_value("buftype", "nofile", { buf = buf })
+  vim.api.nvim_set_option_value("modifiable", false, { buf = buf })
   local width = vim.o.columns
   local height = vim.o.lines
   local win = vim.api.nvim_open_win(buf, true, {
@@ -267,7 +270,6 @@ function M.restore_from_session()
     M.state.saved = session_saved or session_theme
     M.state.auto_apply = session_auto == 1
 
-    local themes = require("raphael.themes")
     if themes.is_available(session_theme) then
       pcall(vim.cmd.colorscheme, session_theme)
     end
@@ -277,8 +279,6 @@ end
 function M.setup(user_config)
   user_config = user_config or {}
   M.config = vim.tbl_deep_extend("force", M.defaults, user_config)
-
-  local themes = require("raphael.themes")
 
   themes.filetype_themes = user_config.filetype_themes or M.defaults.filetype_themes
 
@@ -347,14 +347,14 @@ function M.setup(user_config)
       end
 
       local ft = args.match
-      local theme = themes.filetype_themes[ft]
+      local theme_ft = themes.filetype_themes[ft]
 
-      if theme and themes.is_available(theme) then
-        M.apply(theme, false)
+      if theme_ft and themes.is_available(theme_ft) then
+        M.apply(theme_ft, false)
       else
-        if theme and not themes.is_available(theme) then
+        if theme_ft and not themes.is_available(theme_ft) then
           vim.notify(
-            string.format("raphael: filetype theme '%s' for %s not available, using default", theme, ft),
+            string.format("raphael: filetype theme '%s' for %s not available, using default", theme_ft, ft),
             vim.log.levels.WARN
           )
           if themes.is_available(M.config.default_theme) then
@@ -368,8 +368,6 @@ function M.setup(user_config)
   })
 
   vim.schedule(function()
-    local themes = require("raphael.themes")
-
     if vim.g.raphael_session_theme then
       M.restore_from_session()
       return
@@ -378,9 +376,10 @@ function M.setup(user_config)
     local startup_theme = nil
 
     if M.state.auto_apply and vim.fn.argc() > 0 then
+      ---@diagnostic disable-next-line: param-type-mismatch
       local first_buf = vim.fn.bufnr(vim.fn.argv(0))
       if first_buf ~= -1 then
-        local ft = vim.api.nvim_buf_get_option(first_buf, "filetype")
+        local ft = vim.api.nvim_get_option_value("filetype", { buf = first_buf })
         if ft and ft ~= "" and themes.filetype_themes[ft] then
           return
         end

@@ -1,9 +1,10 @@
 local M = {}
+
 local map = vim.keymap.set
+local themes = require("raphael.themes")
 
 function M.setup(core)
   local leader = core.config.leader
-  local themes = require("raphael.themes")
 
   -- Picker for configured themes only
   map("n", leader .. "p", function()
@@ -35,9 +36,8 @@ function M.setup(core)
     core.show_help()
   end, { desc = "raphael: show help" })
 
-  -- Optional: Keep next/previous/random if desired, using config.mappings
+  -- Keep next/previous/random
   local mappings = core.config.mappings or {}
-
   if mappings.next then
     map("n", leader .. mappings.next, function()
       local all_themes = themes.get_all_themes()
@@ -60,7 +60,6 @@ function M.setup(core)
       end
     end, { desc = "raphael: next theme" })
   end
-
   if mappings.previous then
     map("n", leader .. mappings.previous, function()
       local all_themes = themes.get_all_themes()
@@ -83,7 +82,6 @@ function M.setup(core)
       end
     end, { desc = "raphael: previous theme" })
   end
-
   if mappings.random then
     map("n", leader .. mappings.random, function()
       local all_themes = themes.get_all_themes()

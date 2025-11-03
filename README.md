@@ -58,6 +58,7 @@ luaopts = {
     -- ...
   },
   filetype_themes = {  -- Auto-apply per filetype
+    -- extension/filetype = "theme"
     lua = "kanagawa-paper-ink",
     python = "kanagawa-wave",
     -- ...
@@ -89,7 +90,7 @@ Inside picker:
 
 `c`: Collapse/expand group
 
-`q` / ``<Esc>`: Cancel and revert
+`q` / `<Esc>`: Cancel and revert
 
 ### Commands
 
