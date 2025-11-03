@@ -215,12 +215,8 @@ local function render_internal(opts)
   local picker_ns = vim.api.nvim_create_namespace("raphael_picker_content")
   pcall(vim.api.nvim_buf_clear_namespace, picker_buf, picker_ns, 0, -1)
 
-  if only_configured and exclude_configured then
-    return
-  end
-  if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then
-    return
-  end
+  if only_configured and exclude_configured then return end
+  if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then return end
 
   local current_group
   local current_line = 1
@@ -263,9 +259,7 @@ local function render_internal(opts)
 
   local function sort_filtered(filtered)
     if sort_mode == "alpha" then
-      table.sort(filtered, function(a, b)
-        return a:lower() < b:lower()
-      end)
+      table.sort(filtered, function(a, b) return a:lower() < b:lower() end)
     elseif sort_mode == "recent" then
       table.sort(filtered, function(a, b)
         local idx_a = vim.fn.index(state_ref.history or {}, a) or -1
@@ -281,13 +275,12 @@ local function render_internal(opts)
     end
     local custom_sorts = core_ref.config.custom_sorts or {}
     local custom_func = custom_sorts[sort_mode]
-    if custom_func then
-      table.sort(filtered, custom_func)
-    end
+    if custom_func then table.sort(filtered, custom_func) end
   end
 
-  local _anim_ratio = state_ref._anim_ratio or 1
+  state_ref._anim_ratio_group = state_ref._anim_ratio_group or {}
 
+  -- Bookmarks
   local bookmark_filtered = {}
   for _, t in ipairs(state_ref.bookmarks or {}) do
     if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
@@ -295,10 +288,12 @@ local function render_internal(opts)
     end
   end
   if #bookmark_filtered > 0 then
-    local bookmark_icon = collapsed["__bookmarks"] and ICON_GROUP_COL or ICON_GROUP_EXP
+    local group = "__bookmarks"
+    local ratio = state_ref._anim_ratio_group[group] or 1
+    local bookmark_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
     table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
-    if not collapsed["__bookmarks"] then
-      local visible_count = math.max(1, math.floor(#bookmark_filtered * _anim_ratio))
+    if not collapsed[group] then
+      local visible_count = math.max(1, math.floor(#bookmark_filtered * ratio))
       for i = 1, visible_count do
         local t = bookmark_filtered[i]
         local warning = themes.is_available(t) and "" or " 󰝧 "
@@ -309,6 +304,7 @@ local function render_internal(opts)
     end
   end
 
+  -- Recent
   local recent_filtered = {}
   for _, t in ipairs(state_ref.history or {}) do
     if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
@@ -316,10 +312,12 @@ local function render_internal(opts)
     end
   end
   if #recent_filtered > 0 then
-    local recent_icon = collapsed["__recent"] and ICON_GROUP_COL or ICON_GROUP_EXP
+    local group = "__recent"
+    local ratio = state_ref._anim_ratio_group[group] or 1
+    local recent_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
     table.insert(lines, recent_icon .. " Recent (" .. #state_ref.history .. ")")
-    if not collapsed["__recent"] then
-      local visible_count = math.max(1, math.floor(#recent_filtered * _anim_ratio))
+    if not collapsed[group] then
+      local visible_count = math.max(1, math.floor(#recent_filtered * ratio))
       for i = 1, visible_count do
         local t = recent_filtered[i]
         local warning = themes.is_available(t) and "" or " 󰝧 "
@@ -330,6 +328,7 @@ local function render_internal(opts)
     end
   end
 
+  -- Grouped themes
   if not is_display_grouped then
     local flat_candidates = display_map
     local flat_filtered = search_query == "" and flat_candidates
@@ -343,18 +342,18 @@ local function render_internal(opts)
     end
   else
     for group, items in pairs(display_map) do
-      local group_candidates = items
-      local filtered_items = search_query == "" and group_candidates
-        or vim.fn.matchfuzzy(group_candidates, search_query, { text = true })
+      local filtered_items = search_query == "" and items
+        or vim.fn.matchfuzzy(items, search_query, { text = true })
       sort_filtered(filtered_items)
 
       if #filtered_items > 0 then
+        local ratio = state_ref._anim_ratio_group[group] or 1
         local header_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
         local summary = string.format("(%d)", #items)
         table.insert(lines, string.format("%s %s %s", header_icon, group, summary))
 
         if not collapsed[group] then
-          local visible_count = math.max(1, math.floor(#filtered_items * _anim_ratio))
+          local visible_count = math.max(1, math.floor(#filtered_items * ratio))
           for i = 1, visible_count do
             local t = filtered_items[i]
             local warning = themes.is_available(t) and "" or " 󰝧 "
@@ -406,12 +405,17 @@ local function animate_steps(fn)
   end)
 end
 
+local function ease_out_cubic(t)
+    return 1 - (1 - t) ^ 3
+end
+
 local function toggle_group(group)
-  if not group then
-    return
-  end
+  if not group then return end
   collapsed[group] = not collapsed[group]
+
+  state_ref._anim_ratio_group = state_ref._anim_ratio_group or {}
   if ANIM_STEPS <= 1 then
+    state_ref._anim_ratio_group[group] = 1
     render()
     return
   end
@@ -419,18 +423,23 @@ local function toggle_group(group)
   local function ease_out_cubic(t)
     return 1 - (1 - t) ^ 3
   end
+
   local target_state = collapsed[group]
+
   local step_fn = function(frame)
     local t = frame / ANIM_STEPS
     local eased = ease_out_cubic(t)
+
     if target_state then
-      state_ref._anim_ratio = 1 - eased
+      state_ref._anim_ratio_group[group] = 1 - eased
     else
-      state_ref._anim_ratio = eased
+      state_ref._anim_ratio_group[group] = eased
     end
+
     render()
     return true
   end
+
   animate_steps(step_fn)
 end
 
