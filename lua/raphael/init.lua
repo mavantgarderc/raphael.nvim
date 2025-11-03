@@ -113,6 +113,16 @@ function M.add_to_history(theme)
   end
 end
 
+local function lerp_color(c1, c2, t)
+  local r1, g1, b1 = math.floor(c1 / 0x10000), math.floor(c1 % 0x10000 / 0x100), c1 % 0x100
+  local r2, g2, b2 = math.floor(c2 / 0x10000), math.floor(c2 % 0x10000 / 0x100), c2 % 0x100
+  return math.floor(r1 + t * (r2 - r1)) * 0x10000 + math.floor(g1 + t * (g2 - g1)) * 0x100 + math.floor(b1 + t * (b2 - b1))
+end
+
+local function get_hl_table()
+  return vim.api.nvim_get_hl(0, {})
+end
+
 function M.apply(theme, from_manual)
   if not theme or not themes.is_available(theme) then
     vim.notify("raphael: theme not available: " .. tostring(theme), vim.log.levels.WARN)
@@ -126,19 +136,53 @@ function M.apply(theme, from_manual)
     vim.cmd("syntax reset")
   end
 
-  local ok, err = pcall(vim.cmd.colorscheme, theme)
-  if not ok then
-    vim.notify("raphael: failed to apply theme '" .. tostring(theme) .. "': " .. tostring(err), vim.log.levels.ERROR)
-    if themes.is_available(M.config.default_theme) then
-      vim.cmd("hi clear")
-      if vim.fn.exists("syntax_on") then
-        vim.cmd("syntax reset")
-      end
-      pcall(vim.cmd.colorscheme, M.config.default_theme)
-      M.state.current = M.config.default_theme
+  if M.config.animate and M.config.animate.enabled then
+    local from_hl = get_hl_table()
+    -- Temporarily load new theme to get its HL
+    local temp_ok = pcall(vim.cmd.colorscheme, theme)
+    if not temp_ok then
+      vim.notify("raphael: failed to load theme for animation", vim.log.levels.ERROR)
+      return
     end
-    M.save_state()
-    return
+    local to_hl = get_hl_table()
+    -- Reset to original HL before animating
+    for group, val in pairs(from_hl) do
+      vim.api.nvim_set_hl(0, group, val)
+    end
+
+    local step_ms = M.config.animate.duration / M.config.animate.steps
+    for step = 1, M.config.animate.steps do
+      vim.defer_fn(function()
+        local t = step / M.config.animate.steps
+        for group, val in pairs(to_hl) do
+          local from_val = from_hl[group] or {}
+          local new_val = {}
+          if val.fg then new_val.fg = lerp_color(from_val.fg or val.fg, val.fg, t) end
+          if val.bg then new_val.bg = lerp_color(from_val.bg or val.bg, val.bg, t) end
+          if val.sp then new_val.sp = lerp_color(from_val.sp or val.sp, val.sp, t) end
+          vim.api.nvim_set_hl(0, group, new_val)
+        end
+        if step == M.config.animate.steps then
+          -- Ensure final apply
+          pcall(vim.cmd.colorscheme, theme)
+        end
+      end, math.floor(step * step_ms))
+    end
+  else
+    local ok, err = pcall(vim.cmd.colorscheme, theme)
+    if not ok then
+      vim.notify("raphael: failed to apply theme '" .. tostring(theme) .. "': " .. tostring(err), vim.log.levels.ERROR)
+      if themes.is_available(M.config.default_theme) then
+        vim.cmd("hi clear")
+        if vim.fn.exists("syntax_on") then
+          vim.cmd("syntax reset")
+        end
+        pcall(vim.cmd.colorscheme, M.config.default_theme)
+        M.state.current = M.config.default_theme
+      end
+      M.save_state()
+      return
+    end
   end
 
   M.state.current = theme
