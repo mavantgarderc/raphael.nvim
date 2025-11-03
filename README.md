@@ -92,6 +92,10 @@ Inside picker:
 
 `q` / `<Esc>`: Cancel and revert
 
+`<C-j>` & `<C-k>`: Next/previous Header
+
+`s`: Change sort of theme list
+
 ### Commands
 
 `:RaphaelPicker`: Open configured picker
