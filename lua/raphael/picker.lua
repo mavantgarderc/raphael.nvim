@@ -207,6 +207,35 @@ end
 
 last_cursor = last_cursor or {}
 
+local HIGHLIGHT_NS = vim.api.nvim_create_namespace("raphael_picker_cursor")
+
+local function highlight_current_line()
+  if
+    not picker_buf
+    or not vim.api.nvim_buf_is_valid(picker_buf)
+    or not picker_win
+    or not vim.api.nvim_win_is_valid(picker_win)
+  then
+    return
+  end
+  local cur_line = vim.api.nvim_win_get_cursor(picker_win)[1] - 1
+  pcall(vim.api.nvim_buf_clear_namespace, picker_buf, HIGHLIGHT_NS, 0, -1)
+
+  local line_text = vim.api.nvim_buf_get_lines(picker_buf, cur_line, cur_line + 1, false)[1] or ""
+  if line_text:match("^" .. ICON_GROUP_EXP) or line_text:match("^" .. ICON_GROUP_COL) then
+    return
+  end
+  pcall(
+    vim.highlight.range,
+    picker_buf,
+    HIGHLIGHT_NS,
+    "Visual",
+    { start_line = cur_line, start_col = 0 },
+    { end_line = cur_line, end_col = -1 },
+    { inclusive = false, priority = 100 }
+  )
+end
+
 local function render_internal(opts)
   opts = opts or picker_opts
   picker_opts = opts
@@ -543,6 +572,25 @@ local function open_search()
     end,
   })
 
+  local function restore_cursor_after_search()
+    if
+      not picker_buf
+      or not vim.api.nvim_buf_is_valid(picker_buf)
+      or not picker_win
+      or not vim.api.nvim_win_is_valid(picker_win)
+    then
+      return
+    end
+    local lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    for i, line in ipairs(lines) do
+      if not line:match("^" .. ICON_GROUP_EXP) and not line:match("^" .. ICON_GROUP_COL) then
+        pcall(vim.api.nvim_win_set_cursor, picker_win, { i, 0 })
+        highlight_current_line()
+        break
+      end
+    end
+  end
+
   vim.keymap.set("i", "<Esc>", function()
     search_query = ""
     render(picker_opts)
@@ -553,6 +601,7 @@ local function open_search()
     vim.cmd("stopinsert")
     if picker_win and vim.api.nvim_win_is_valid(picker_win) then
       pcall(vim.api.nvim_set_current_win, picker_win)
+      restore_cursor_after_search()
     end
   end, { buffer = search_buf })
 
