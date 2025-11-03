@@ -124,7 +124,9 @@ end
 local function lerp_color(c1, c2, t)
   local r1, g1, b1 = math.floor(c1 / 0x10000), math.floor(c1 % 0x10000 / 0x100), c1 % 0x100
   local r2, g2, b2 = math.floor(c2 / 0x10000), math.floor(c2 % 0x10000 / 0x100), c2 % 0x100
-  return math.floor(r1 + t * (r2 - r1)) * 0x10000 + math.floor(g1 + t * (g2 - g1)) * 0x100 + math.floor(b1 + t * (b2 - b1))
+  return math.floor(r1 + t * (r2 - r1)) * 0x10000
+    + math.floor(g1 + t * (g2 - g1)) * 0x100
+    + math.floor(b1 + t * (b2 - b1))
 end
 
 local function get_hl_table()
