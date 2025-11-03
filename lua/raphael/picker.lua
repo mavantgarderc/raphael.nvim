@@ -441,10 +441,6 @@ local function animate_steps(fn)
   end)
 end
 
-local function ease_out_cubic(t)
-  return 1 - (1 - t) ^ 3
-end
-
 local function toggle_group(group)
   if not group then
     return
@@ -660,27 +656,6 @@ function M.open(core, opts)
   })
 
   state_ref.previous = vim.g.colors_name
-
-  local hl_ns = vim.api.nvim_create_namespace("raphael_picker_cursor")
-
-  local function highlight_current_line()
-    if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then
-      return
-    end
-    local cur_line = vim.api.nvim_win_get_cursor(picker_win)[1] - 1
-
-    pcall(vim.api.nvim_buf_clear_namespace, picker_buf, hl_ns, 0, -1)
-
-    pcall(
-      vim.highlight.range,
-      picker_buf,
-      hl_ns,
-      "Visual",
-      { start_line = cur_line, start_col = 0 },
-      { end_line = cur_line, end_col = -1 },
-      { inclusive = false, priority = 100 }
-    )
-  end
 
   vim.keymap.set("n", "j", function()
     local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
