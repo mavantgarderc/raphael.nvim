@@ -9,6 +9,9 @@ M.defaults = {
   state_file = vim.fn.stdpath("data") .. "/raphael/state.json",
   theme_map = nil,
   filetype_themes = {},
+  animate = { enabled = false, duration = 200, steps = 10 },
+  sort_mode = "alpha",
+  custom_sorts = {},
 }
 
 M.state = nil
@@ -52,6 +55,8 @@ function M.load_state()
       bookmarks = {},
       collapsed = {},
       history = {},
+      sort_mode = M.config.sort_mode,
+      usage = {},
     }
     local payload = vim.fn.json_encode(M.state)
     async_write(M.config.state_file, payload)
@@ -71,13 +76,14 @@ function M.load_state()
       bookmarks = {},
       collapsed = {},
       history = {},
+      sort_mode = M.config.sort_mode,
+      usage = {},
     }
     local payload = vim.fn.json_encode(M.state)
     async_write(M.config.state_file, payload)
     return
   end
 
-  -- merge with defaults to ensure all fields exist
   M.state = {
     current = decoded.current or M.config.default_theme,
     saved = decoded.saved or decoded.current or M.config.default_theme,
@@ -86,6 +92,8 @@ function M.load_state()
     bookmarks = decoded.bookmarks or {},
     collapsed = decoded.collapsed or {},
     history = decoded.history or {},
+    sort_mode = decoded.sort_mode or M.config.sort_mode,
+    usage = decoded.usage or {},
   }
 end
 
@@ -136,6 +144,7 @@ function M.apply(theme, from_manual)
     vim.cmd("syntax reset")
   end
 
+  local apply_success = false
   if M.config.animate and M.config.animate.enabled then
     local from_hl = get_hl_table()
     -- Temporarily load new theme to get its HL
@@ -157,9 +166,15 @@ function M.apply(theme, from_manual)
         for group, val in pairs(to_hl) do
           local from_val = from_hl[group] or {}
           local new_val = {}
-          if val.fg then new_val.fg = lerp_color(from_val.fg or val.fg, val.fg, t) end
-          if val.bg then new_val.bg = lerp_color(from_val.bg or val.bg, val.bg, t) end
-          if val.sp then new_val.sp = lerp_color(from_val.sp or val.sp, val.sp, t) end
+          if val.fg then
+            new_val.fg = lerp_color(from_val.fg or val.fg, val.fg, t)
+          end
+          if val.bg then
+            new_val.bg = lerp_color(from_val.bg or val.bg, val.bg, t)
+          end
+          if val.sp then
+            new_val.sp = lerp_color(from_val.sp or val.sp, val.sp, t)
+          end
           vim.api.nvim_set_hl(0, group, new_val)
         end
         if step == M.config.animate.steps then
@@ -168,6 +183,7 @@ function M.apply(theme, from_manual)
         end
       end, math.floor(step * step_ms))
     end
+    apply_success = true
   else
     local ok, err = pcall(vim.cmd.colorscheme, theme)
     if not ok then
@@ -183,17 +199,22 @@ function M.apply(theme, from_manual)
       M.save_state()
       return
     end
+    apply_success = ok
   end
 
-  M.state.current = theme
-  M.add_to_history(theme)
+  if apply_success then
+    M.state.current = theme
+    M.add_to_history(theme)
+    M.state.usage = M.state.usage or {}
+    M.state.usage[theme] = (M.state.usage[theme] or 0) + 1
 
-  if from_manual then
-    M.state.saved = theme
+    if from_manual then
+      M.state.saved = theme
+    end
+
+    M.save_state()
+    vim.notify("raphael: applied " .. theme)
   end
-
-  M.save_state()
-  vim.notify("raphael: applied " .. theme)
 end
 
 function M.toggle_auto()

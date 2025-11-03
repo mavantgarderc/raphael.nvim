@@ -144,7 +144,7 @@ function M.update_palette(theme)
   pcall(vim.api.nvim_set_option_value, "modifiable", false, { buf = palette_buf })
 
   local bufline = (vim.api.nvim_buf_get_lines(palette_buf, 0, 1, false) or { "" })[1] or ""
-  local ns = vim.api.nvim_create_namespace("palette_highlight")
+  local ns = vim.api.nvim_create_namespace("raphael_palette")
   pcall(vim.api.nvim_buf_clear_namespace, palette_buf, ns, 0, -1)
 
   for i, hl_name in ipairs(PALETTE_HL) do
@@ -163,9 +163,10 @@ function M.update_palette(theme)
           end
           occurrence = occurrence + 1
           if occurrence == i then
-            pcall(vim.api.nvim_buf_set_extmark, palette_buf, ns, 0, s - 1, {
+            vim.api.nvim_buf_set_extmark(palette_buf, ns, 0, s - 1, {
               end_col = e,
               hl_group = gname,
+              strict = false,
             })
             break
           end
@@ -235,12 +236,17 @@ local function render(opts)
 
   local is_display_grouped = not vim.islist(display_map)
 
-  local bookmark_candidates = state_ref.bookmarks or {}
-  local bookmark_filtered = search_query == "" and bookmark_candidates
-    or vim.fn.matchfuzzy(bookmark_candidates, search_query, { text = true })
+  local sort_mode = state_ref.sort_mode or core_ref.config.sort_mode or "alpha"
+
+  local bookmark_filtered = {}
+  for _, t in ipairs(state_ref.bookmarks or {}) do
+    if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
+      table.insert(bookmark_filtered, t)
+    end
+  end
   if #bookmark_filtered > 0 then
     local bookmark_icon = collapsed["__bookmarks"] and ICON_GROUP_COL or ICON_GROUP_EXP
-    table.insert(lines, bookmark_icon .. " Bookmarks (" .. #bookmark_candidates .. ")")
+    table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
     if not collapsed["__bookmarks"] then
       for _, t in ipairs(bookmark_filtered) do
         local warning = themes.is_available(t) and "" or " 󰝧 "
@@ -251,12 +257,15 @@ local function render(opts)
     end
   end
 
-  local recent_candidates = state_ref.history or {}
-  local recent_filtered = search_query == "" and recent_candidates
-    or vim.fn.matchfuzzy(recent_candidates, search_query, { text = true })
+  local recent_filtered = {}
+  for _, t in ipairs(state_ref.history or {}) do
+    if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
+      table.insert(recent_filtered, t)
+    end
+  end
   if #recent_filtered > 0 then
     local recent_icon = collapsed["__recent"] and ICON_GROUP_COL or ICON_GROUP_EXP
-    table.insert(lines, recent_icon .. " Recent (" .. #recent_candidates .. ")")
+    table.insert(lines, recent_icon .. " Recent (" .. #state_ref.history .. ")")
     if not collapsed["__recent"] then
       for _, t in ipairs(recent_filtered) do
         local warning = themes.is_available(t) and "" or " 󰝧 "
@@ -267,10 +276,33 @@ local function render(opts)
     end
   end
 
+  local function sort_filtered(filtered)
+    if sort_mode == "alpha" then
+      table.sort(filtered, function(a, b) return a:lower() < b:lower() end)
+    elseif sort_mode == "recent" then
+      table.sort(filtered, function(a, b)
+        local idx_a = vim.fn.index(state_ref.history or {}, a) or -1
+        local idx_b = vim.fn.index(state_ref.history or {}, b) or -1
+        return idx_a > idx_b
+      end)
+    elseif sort_mode == "usage" then
+      table.sort(filtered, function(a, b)
+        local count_a = (state_ref.usage or {})[a] or 0
+        local count_b = (state_ref.usage or {})[b] or 0
+        return count_a > count_b
+      end)
+    end
+    local custom_sorts = core_ref.config.custom_sorts or {}
+    local custom_func = custom_sorts[sort_mode]
+    if custom_func then
+      table.sort(filtered, custom_func)
+    end
+  end
+
   if not is_display_grouped then
     local flat_candidates = display_map
-    local flat_filtered = search_query == "" and flat_candidates
-      or vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
+    local flat_filtered = search_query == "" and flat_candidates or vim.fn.matchfuzzy(flat_candidates, search_query, {text = true})
+    sort_filtered(flat_filtered)
     for _, t in ipairs(flat_filtered) do
       local warning = themes.is_available(t) and "" or " 󰝧 "
       local b = bookmarks[t] and ICON_BOOKMARK or " "
@@ -280,8 +312,8 @@ local function render(opts)
   else
     for group, items in pairs(display_map) do
       local group_candidates = items
-      local filtered_items = search_query == "" and group_candidates
-        or vim.fn.matchfuzzy(group_candidates, search_query, { text = true })
+      local filtered_items = search_query == "" and group_candidates or vim.fn.matchfuzzy(group_candidates, search_query, {text = true})
+      sort_filtered(filtered_items)
 
       if #filtered_items > 0 then
         local header_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
@@ -423,6 +455,10 @@ function M.open(core, opts)
   picker_row = math.floor((vim.o.lines - picker_h) / 2)
   picker_col = math.floor((vim.o.columns - picker_w) / 2)
 
+  local sort_mode = state_ref.sort_mode or core_ref.config.sort_mode or "alpha"
+  local base_title = opts.exclude_configured and "Raphael - Other Themes" or "Raphael - Configured Themes"
+  local title = base_title .. " (Sort: " .. sort_mode .. ")"
+
   picker_win = vim.api.nvim_open_win(picker_buf, true, {
     relative = "editor",
     width = picker_w,
@@ -431,7 +467,7 @@ function M.open(core, opts)
     col = picker_col,
     style = "minimal",
     border = "rounded",
-    title = opts.exclude_configured and " Raphael: Other Themes " or " Raphael: Configured Themes ",
+    title = title,
   })
 
   state_ref.previous = vim.g.colors_name
@@ -490,6 +526,18 @@ function M.open(core, opts)
       vim.notify("No header detected on line", vim.log.levels.WARN)
     end
   end, { buffer = picker_buf, desc = "Collapse/expand group" })
+
+  vim.keymap.set("n", "s", function()
+    local sort_modes = {"alpha", "recent", "usage"}
+    local idx = vim.fn.index(sort_modes, state_ref.sort_mode or "alpha") + 1
+    state_ref.sort_mode = sort_modes[(idx % #sort_modes) + 1]
+    if core_ref and core_ref.save_state then
+      pcall(core_ref.save_state)
+    end
+    local new_title = base_title .. " (Sort: " .. state_ref.sort_mode .. ")"
+    vim.api.nvim_win_set_config(picker_win, {title = new_title})
+    render(opts)
+  end, { buffer = picker_buf, desc = "Cycle sort mode" })
 
   vim.keymap.set("n", "/", open_search, { buffer = picker_buf })
 
