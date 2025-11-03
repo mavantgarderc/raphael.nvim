@@ -215,8 +215,12 @@ local function render_internal(opts)
   local picker_ns = vim.api.nvim_create_namespace("raphael_picker_content")
   pcall(vim.api.nvim_buf_clear_namespace, picker_buf, picker_ns, 0, -1)
 
-  if only_configured and exclude_configured then return end
-  if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then return end
+  if only_configured and exclude_configured then
+    return
+  end
+  if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then
+    return
+  end
 
   local current_group
   local current_line = 1
@@ -259,7 +263,9 @@ local function render_internal(opts)
 
   local function sort_filtered(filtered)
     if sort_mode == "alpha" then
-      table.sort(filtered, function(a, b) return a:lower() < b:lower() end)
+      table.sort(filtered, function(a, b)
+        return a:lower() < b:lower()
+      end)
     elseif sort_mode == "recent" then
       table.sort(filtered, function(a, b)
         local idx_a = vim.fn.index(state_ref.history or {}, a) or -1
@@ -275,7 +281,9 @@ local function render_internal(opts)
     end
     local custom_sorts = core_ref.config.custom_sorts or {}
     local custom_func = custom_sorts[sort_mode]
-    if custom_func then table.sort(filtered, custom_func) end
+    if custom_func then
+      table.sort(filtered, custom_func)
+    end
   end
 
   state_ref._anim_ratio_group = state_ref._anim_ratio_group or {}
@@ -342,8 +350,7 @@ local function render_internal(opts)
     end
   else
     for group, items in pairs(display_map) do
-      local filtered_items = search_query == "" and items
-        or vim.fn.matchfuzzy(items, search_query, { text = true })
+      local filtered_items = search_query == "" and items or vim.fn.matchfuzzy(items, search_query, { text = true })
       sort_filtered(filtered_items)
 
       if #filtered_items > 0 then
@@ -406,11 +413,13 @@ local function animate_steps(fn)
 end
 
 local function ease_out_cubic(t)
-    return 1 - (1 - t) ^ 3
+  return 1 - (1 - t) ^ 3
 end
 
 local function toggle_group(group)
-  if not group then return end
+  if not group then
+    return
+  end
   collapsed[group] = not collapsed[group]
 
   state_ref._anim_ratio_group = state_ref._anim_ratio_group or {}
@@ -522,7 +531,9 @@ local function open_search()
             local start_idx = 1
             while true do
               local s, e = line:lower():find(query_lower, start_idx, true)
-              if not s then break end
+              if not s then
+                break
+              end
               vim.api.nvim_buf_set_extmark(picker_buf, ns, i - 1, s - 1, { end_col = e, hl_group = "Search" })
               start_idx = e + 1
             end
@@ -601,6 +612,43 @@ function M.open(core, opts)
 
   state_ref.previous = vim.g.colors_name
 
+  local hl_ns = vim.api.nvim_create_namespace("raphael_picker_cursor")
+
+  local function highlight_current_line()
+    if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then
+      return
+    end
+    local cur_line = vim.api.nvim_win_get_cursor(picker_win)[1] - 1
+
+    pcall(vim.api.nvim_buf_clear_namespace, picker_buf, hl_ns, 0, -1)
+
+    pcall(
+      vim.highlight.range,
+      picker_buf,
+      hl_ns,
+      "Visual",
+      { start_line = cur_line, start_col = 0 },
+      { end_line = cur_line, end_col = -1 },
+      { inclusive = false, priority = 100 }
+    )
+  end
+
+  vim.keymap.set("n", "j", function()
+    local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    local next_line = cur >= line_count and 1 or cur + 1
+    vim.api.nvim_win_set_cursor(picker_win, { next_line, 0 })
+    highlight_current_line()
+  end, { buffer = picker_buf })
+
+  vim.keymap.set("n", "k", function()
+    local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    local prev_line = cur <= 1 and line_count or cur - 1
+    vim.api.nvim_win_set_cursor(picker_win, { prev_line, 0 })
+    highlight_current_line()
+  end, { buffer = picker_buf })
+
   vim.keymap.set("n", "<C-j>", function()
     local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
     for _, ln in ipairs(header_lines) do
@@ -624,7 +672,6 @@ function M.open(core, opts)
   vim.keymap.set("n", "q", function()
     close_picker(true)
   end, { buffer = picker_buf })
-
   vim.keymap.set("n", "<Esc>", function()
     close_picker(true)
   end, { buffer = picker_buf })
@@ -633,6 +680,7 @@ function M.open(core, opts)
     local line = vim.api.nvim_get_current_line()
     local hdr = parse_line_header(line)
     if hdr then
+      vim.notify("Cannot select a group header", vim.log.levels.WARN)
       return
     end
     local theme = parse_line_theme(line)
@@ -720,10 +768,12 @@ function M.open(core, opts)
       local line = vim.api.nvim_get_current_line()
       local theme = parse_line_theme(line)
       preview(theme)
+      highlight_current_line()
     end,
   })
 
   render(opts)
+  highlight_current_line()
 
   if state_ref.current then
     M.update_palette(state_ref.current)
