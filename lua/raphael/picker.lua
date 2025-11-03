@@ -13,6 +13,7 @@ local collapsed = {}
 local bookmarks = {}
 local search_query = ""
 local picker_opts = {}
+local header_lines = {}
 
 local ICON_BOOKMARK = "  "
 local ICON_CURRENT_ON = "  "
@@ -102,7 +103,6 @@ function M.update_palette(theme)
     return
   end
 
-  if previewed == theme then return end
   previewed = theme
 
   if not picker_win or not vim.api.nvim_win_is_valid(picker_win) or not picker_w then return end
@@ -163,6 +163,7 @@ end
 local function render(opts)
   opts = opts or picker_opts
   picker_opts = opts
+  header_lines = {}
   local only_configured = opts.only_configured or false
   local exclude_configured = opts.exclude_configured or false
 
@@ -187,50 +188,10 @@ local function render(opts)
       end
     end
     display_map = extras
-  elseif only_configured then
   end
 
   local is_display_grouped = not vim.islist(display_map)
-
   local sort_mode = state_ref.sort_mode or core_ref.config.sort_mode or "alpha"
-
-  local bookmark_filtered = {}
-  for _, t in ipairs(state_ref.bookmarks or {}) do
-    if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
-      table.insert(bookmark_filtered, t)
-    end
-  end
-  if #bookmark_filtered > 0 then
-    local bookmark_icon = collapsed["__bookmarks"] and ICON_GROUP_COL or ICON_GROUP_EXP
-    table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
-    if not collapsed["__bookmarks"] then
-      for _, t in ipairs(bookmark_filtered) do
-        local warning = themes.is_available(t) and "" or " 󰝧 "
-        local b = " "
-        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
-        table.insert(lines, "  " .. warning .. b .. s .. t)
-      end
-    end
-  end
-
-  local recent_filtered = {}
-  for _, t in ipairs(state_ref.history or {}) do
-    if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
-      table.insert(recent_filtered, t)
-    end
-  end
-  if #recent_filtered > 0 then
-    local recent_icon = collapsed["__recent"] and ICON_GROUP_COL or ICON_GROUP_EXP
-    table.insert(lines, recent_icon .. " Recent (" .. #state_ref.history .. ")")
-    if not collapsed["__recent"] then
-      for _, t in ipairs(recent_filtered) do
-        local warning = themes.is_available(t) and "" or " 󰝧 "
-        local b = bookmarks[t] and ICON_BOOKMARK or " "
-        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
-        table.insert(lines, "  " .. warning .. b .. s .. t)
-      end
-    end
-  end
 
   local function sort_filtered(filtered)
     if sort_mode == "alpha" then
@@ -255,6 +216,46 @@ local function render(opts)
     end
   end
 
+  local bookmark_filtered = {}
+  for _, t in ipairs(state_ref.bookmarks or {}) do
+    if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
+      table.insert(bookmark_filtered, t)
+    end
+  end
+  if #bookmark_filtered > 0 then
+    local icon = collapsed["__bookmarks"] and ICON_GROUP_COL or ICON_GROUP_EXP
+    table.insert(lines, icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
+    table.insert(header_lines, #lines)
+    if not collapsed["__bookmarks"] then
+      for _, t in ipairs(bookmark_filtered) do
+        local warning = themes.is_available(t) and "" or " 󰝧 "
+        local b = " "
+        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+        table.insert(lines, "  " .. warning .. b .. s .. t)
+      end
+    end
+  end
+
+  local recent_filtered = {}
+  for _, t in ipairs(state_ref.history or {}) do
+    if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
+      table.insert(recent_filtered, t)
+    end
+  end
+  if #recent_filtered > 0 then
+    local icon = collapsed["__recent"] and ICON_GROUP_COL or ICON_GROUP_EXP
+    table.insert(lines, icon .. " Recent (" .. #state_ref.history .. ")")
+    table.insert(header_lines, #lines)
+    if not collapsed["__recent"] then
+      for _, t in ipairs(recent_filtered) do
+        local warning = themes.is_available(t) and "" or " 󰝧 "
+        local b = bookmarks[t] and ICON_BOOKMARK or " "
+        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+        table.insert(lines, "  " .. warning .. b .. s .. t)
+      end
+    end
+  end
+
   if not is_display_grouped then
     local flat_candidates = display_map
     local flat_filtered = search_query == "" and flat_candidates or vim.fn.matchfuzzy(flat_candidates, search_query, {text = true})
@@ -267,15 +268,12 @@ local function render(opts)
     end
   else
     for group, items in pairs(display_map) do
-      local group_candidates = items
-      local filtered_items = search_query == "" and group_candidates or vim.fn.matchfuzzy(group_candidates, search_query, {text = true})
+      local filtered_items = search_query == "" and items or vim.fn.matchfuzzy(items, search_query, {text = true})
       sort_filtered(filtered_items)
-
       if #filtered_items > 0 then
-        local header_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
-        local summary = string.format("(%d)", #items)
-        table.insert(lines, string.format("%s %s %s", header_icon, group, summary))
-
+        local icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
+        table.insert(lines, string.format("%s %s (%d)", icon, group, #items))
+        table.insert(header_lines, #lines)
         if not collapsed[group] then
           for _, t in ipairs(filtered_items) do
             local warning = themes.is_available(t) and "" or " 󰝧 "
@@ -296,19 +294,11 @@ end
 local function close_picker(revert)
   if revert and state_ref and state_ref.previous and themes.is_available(state_ref.previous) then
     pcall(vim.cmd.colorscheme, state_ref.previous)
-    if core_ref and core_ref.apply then
-      core_ref.apply(state_ref.previous, true)
-    end
+    if core_ref and core_ref.apply then core_ref.apply(state_ref.previous, true) end
   end
-  if picker_win and vim.api.nvim_win_is_valid(picker_win) then
-    pcall(vim.api.nvim_win_close, picker_win, true)
-  end
-  if palette_win and vim.api.nvim_win_is_valid(palette_win) then
-    pcall(vim.api.nvim_win_close, palette_win, true)
-  end
-  if search_win and vim.api.nvim_win_is_valid(search_win) then
-    pcall(vim.api.nvim_win_close, search_win, true)
-  end
+  if picker_win and vim.api.nvim_win_is_valid(picker_win) then pcall(vim.api.nvim_win_close, picker_win, true) end
+  if palette_win and vim.api.nvim_win_is_valid(palette_win) then pcall(vim.api.nvim_win_close, palette_win, true) end
+  if search_win and vim.api.nvim_win_is_valid(search_win) then pcall(vim.api.nvim_win_close, search_win, true) end
   picker_buf, picker_win, palette_buf, palette_win, search_buf, search_win = nil, nil, nil, nil, nil, nil
   search_query = ""
   previewed = nil
@@ -316,12 +306,8 @@ local function close_picker(revert)
 end
 
 local function do_preview(theme)
-  if not theme or not themes.is_available(theme) then
-    return
-  end
-  if previewed == theme then
-    return
-  end
+  if not theme or not themes.is_available(theme) then return end
+  if previewed == theme then return end
   previewed = theme
   pcall(vim.cmd.colorscheme, theme)
   pcall(M.update_palette, theme)
@@ -329,13 +315,8 @@ end
 local preview = debounce(100, do_preview)
 
 local function open_search()
-  if not picker_win or not vim.api.nvim_win_is_valid(picker_win) then
-    return
-  end
-  if search_win and vim.api.nvim_win_is_valid(search_win) then
-    pcall(vim.api.nvim_set_current_win, search_win)
-    return
-  end
+  if not picker_win or not vim.api.nvim_win_is_valid(picker_win) then return end
+  if search_win and vim.api.nvim_win_is_valid(search_win) then pcall(vim.api.nvim_set_current_win, search_win) return end
 
   search_buf = vim.api.nvim_create_buf(false, true)
   local s_row = picker_row + picker_h - 1
@@ -363,25 +344,17 @@ local function open_search()
   })
 
   vim.keymap.set("i", "<Esc>", function()
-    if search_win and vim.api.nvim_win_is_valid(search_win) then
-      pcall(vim.api.nvim_win_close, search_win, true)
-    end
+    if search_win and vim.api.nvim_win_is_valid(search_win) then pcall(vim.api.nvim_win_close, search_win, true) end
     search_buf, search_win = nil, nil
     vim.cmd("stopinsert")
-    if picker_win and vim.api.nvim_win_is_valid(picker_win) then
-      pcall(vim.api.nvim_set_current_win, picker_win)
-    end
+    if picker_win and vim.api.nvim_win_is_valid(picker_win) then pcall(vim.api.nvim_set_current_win, picker_win) end
   end, { buffer = search_buf })
 
   vim.keymap.set("i", "<CR>", function()
-    if search_win and vim.api.nvim_win_is_valid(search_win) then
-      pcall(vim.api.nvim_win_close, search_win, true)
-    end
+    if search_win and vim.api.nvim_win_is_valid(search_win) then pcall(vim.api.nvim_win_close, search_win, true) end
     search_buf, search_win = nil, nil
     vim.cmd("stopinsert")
-    if picker_win and vim.api.nvim_win_is_valid(picker_win) then
-      pcall(vim.api.nvim_set_current_win, picker_win)
-    end
+    if picker_win and vim.api.nvim_win_is_valid(picker_win) then pcall(vim.api.nvim_set_current_win, picker_win) end
   end, { buffer = search_buf })
 end
 
@@ -392,9 +365,7 @@ function M.open(core, opts)
   state_ref = core.state
 
   bookmarks = {}
-  for _, b in ipairs(state_ref.bookmarks or {}) do
-    bookmarks[b] = true
-  end
+  for _, b in ipairs(state_ref.bookmarks or {}) do bookmarks[b] = true end
   collapsed = type(state_ref.collapsed) == "table" and vim.deepcopy(state_ref.collapsed) or {}
   collapsed["__bookmarks"] = collapsed["__bookmarks"] or false
   collapsed["__recent"] = collapsed["__recent"] or false
@@ -427,6 +398,20 @@ function M.open(core, opts)
   })
 
   state_ref.previous = vim.g.colors_name
+
+  vim.keymap.set("n", "<C-j>", function()
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    for _, ln in ipairs(header_lines) do
+      if ln > cur then vim.api.nvim_win_set_cursor(picker_win, {ln, 0}) break end
+    end
+  end, { buffer = picker_buf })
+
+  vim.keymap.set("n", "<C-k>", function()
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    for i = #header_lines, 1, -1 do
+      if header_lines[i] < cur then vim.api.nvim_win_set_cursor(picker_win, {header_lines[i], 0}) break end
+    end
+  end, { buffer = picker_buf })
 
   vim.keymap.set("n", "q", function()
     close_picker(true)
