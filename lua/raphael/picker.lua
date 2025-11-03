@@ -192,19 +192,15 @@ function M.update_palette(theme)
       { relative = "editor", width = pal_width, height = 1, row = pal_row, col = pal_col, style = "minimal" }
     )
   else
-    palette_win = vim.api.nvim_open_win(
-      palette_buf,
-      false,
-      {
-        relative = "editor",
-        width = pal_width,
-        height = 1,
-        row = pal_row,
-        col = pal_col,
-        style = "minimal",
-        zindex = 50,
-      }
-    )
+    palette_win = vim.api.nvim_open_win(palette_buf, false, {
+      relative = "editor",
+      width = pal_width,
+      height = 1,
+      row = pal_row,
+      col = pal_col,
+      style = "minimal",
+      zindex = 50,
+    })
     pcall(vim.api.nvim_set_option_value, "winhl", "Normal:Normal", { win = palette_win })
   end
 end
@@ -247,7 +243,6 @@ local function render_internal(opts)
 
   local lines = {}
   local display_map = vim.deepcopy(themes.theme_map)
-
   if exclude_configured then
     local all_installed = vim.tbl_keys(themes.installed)
     table.sort(all_installed)
@@ -259,7 +254,6 @@ local function render_internal(opts)
       end
     end
     display_map = extras
-  elseif only_configured then
   end
 
   local is_display_grouped = not vim.islist(display_map)
@@ -290,9 +284,11 @@ local function render_internal(opts)
     end
   end
 
+  local _anim_ratio = state_ref._anim_ratio or 1
+
   local bookmark_filtered = {}
   for _, t in ipairs(state_ref.bookmarks or {}) do
-    if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
+    if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
       table.insert(bookmark_filtered, t)
     end
   end
@@ -300,10 +296,12 @@ local function render_internal(opts)
     local bookmark_icon = collapsed["__bookmarks"] and ICON_GROUP_COL or ICON_GROUP_EXP
     table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
     if not collapsed["__bookmarks"] then
-      for _, t in ipairs(bookmark_filtered) do
+      local visible_count = math.max(1, math.floor(#bookmark_filtered * _anim_ratio))
+      for i = 1, visible_count do
+        local t = bookmark_filtered[i]
         local warning = themes.is_available(t) and "" or " 󰝧 "
         local b = " "
-        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+        local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
         table.insert(lines, "  " .. warning .. b .. s .. t)
       end
     end
@@ -311,7 +309,7 @@ local function render_internal(opts)
 
   local recent_filtered = {}
   for _, t in ipairs(state_ref.history or {}) do
-    if search_query == "" or (t:lower():find(search_query:lower(), 1, true)) then
+    if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
       table.insert(recent_filtered, t)
     end
   end
@@ -319,10 +317,12 @@ local function render_internal(opts)
     local recent_icon = collapsed["__recent"] and ICON_GROUP_COL or ICON_GROUP_EXP
     table.insert(lines, recent_icon .. " Recent (" .. #state_ref.history .. ")")
     if not collapsed["__recent"] then
-      for _, t in ipairs(recent_filtered) do
+      local visible_count = math.max(1, math.floor(#recent_filtered * _anim_ratio))
+      for i = 1, visible_count do
+        local t = recent_filtered[i]
         local warning = themes.is_available(t) and "" or " 󰝧 "
         local b = bookmarks[t] and ICON_BOOKMARK or " "
-        local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+        local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
         table.insert(lines, "  " .. warning .. b .. s .. t)
       end
     end
@@ -336,7 +336,7 @@ local function render_internal(opts)
     for _, t in ipairs(flat_filtered) do
       local warning = themes.is_available(t) and "" or " 󰝧 "
       local b = bookmarks[t] and ICON_BOOKMARK or " "
-      local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+      local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
       table.insert(lines, string.format("%s%s %s %s", warning, b, s, t))
     end
   else
@@ -352,26 +352,18 @@ local function render_internal(opts)
         table.insert(lines, string.format("%s %s %s", header_icon, group, summary))
 
         if not collapsed[group] then
-          local ratio = state_ref._anim_ratio or 1
-          local visible_count = math.max(1, math.floor(#filtered_items * ratio))
+          local visible_count = math.max(1, math.floor(#filtered_items * _anim_ratio))
           for i = 1, visible_count do
             local t = filtered_items[i]
             local warning = themes.is_available(t) and "" or " 󰝧 "
             local b = bookmarks[t] and ICON_BOOKMARK or " "
-            local s = (state_ref and state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+            local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
             table.insert(lines, string.format("  %s%s %s %s", warning, b, s, t))
           end
         end
       end
     end
   end
-
-    header_lines = {}
-    for i, line in ipairs(lines) do
-        if parse_line_header(line) then
-            table.insert(header_lines, i)
-        end
-    end
 
   pcall(vim.api.nvim_set_option_value, "modifiable", true, { buf = picker_buf })
   pcall(vim.api.nvim_buf_set_lines, picker_buf, 0, -1, false, lines)
@@ -413,28 +405,32 @@ local function animate_steps(fn)
 end
 
 local function toggle_group(group)
-  if not group then return end
+  if not group then
+    return
+  end
   collapsed[group] = not collapsed[group]
   if ANIM_STEPS <= 1 then
     render()
     return
   end
 
+  local function ease_out_cubic(t)
+    return 1 - (1 - t) ^ 3
+  end
   local target_state = collapsed[group]
   local step_fn = function(frame)
+    local t = frame / ANIM_STEPS
+    local eased = ease_out_cubic(t)
     if target_state then
-      local ratio = 1 - (frame / ANIM_STEPS)
-      state_ref._anim_ratio = ratio
+      state_ref._anim_ratio = 1 - eased
     else
-      local ratio = (frame / ANIM_STEPS)
-      state_ref._anim_ratio = ratio
+      state_ref._anim_ratio = eased
     end
     render()
     return true
   end
   animate_steps(step_fn)
 end
-
 
 local function close_picker(revert)
   if revert and state_ref and state_ref.previous and themes.is_available(state_ref.previous) then
@@ -629,7 +625,6 @@ function M.open(core, opts)
   vim.keymap.set("n", "c", function()
     local line = vim.api.nvim_get_current_line()
     local hdr = parse_line_header(line)
-
     if not hdr then
       local lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
       local current_idx = vim.api.nvim_win_get_cursor(picker_win)[1]
@@ -648,12 +643,12 @@ function M.open(core, opts)
       elseif hdr == "Recent" then
         hdr = "__recent"
       end
-      collapsed[hdr] = not collapsed[hdr]
+
+      toggle_group(hdr)
       state_ref.collapsed = vim.deepcopy(collapsed)
       if core_ref and core_ref.save_state then
         pcall(core_ref.save_state)
       end
-      render(picker_opts)
     else
       vim.notify("No group detected for current line", vim.log.levels.WARN)
     end
