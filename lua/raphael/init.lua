@@ -6,17 +6,14 @@ local history = require("raphael.theme_history")
 M.defaults = {
   leader = "<leader>t",
   mappings = {
-        picker = "p",
-        next = ">",
-        previous = "<",
-        search = "/",
-        auto = "a",
-        refresh = "R",
-        status = "s",
-        undo = "u",
-        redo = "r",
-        random = "t",
-    },
+    picker = "p",
+    next = ">",
+    previous = "<",
+    others = "/",
+    auto = "a",
+    refresh = "R",
+    status = "s",
+  },
   default_theme = "kanagawa-paper-ink",
   state_file = vim.fn.stdpath("data") .. "/raphael/state.json",
   theme_map = nil,
@@ -25,6 +22,7 @@ M.defaults = {
   sort_mode = "alpha",
   custom_sorts = {},
   theme_aliases = {},
+  history_max_size = 13,
 }
 
 M.state = nil
@@ -70,6 +68,7 @@ function M.load_state()
       history = {},
       sort_mode = M.config.sort_mode,
       usage = {},
+      undo_history = nil,
     }
     local payload = vim.fn.json_encode(M.state)
     async_write(M.config.state_file, payload)
@@ -91,6 +90,7 @@ function M.load_state()
       history = {},
       sort_mode = M.config.sort_mode,
       usage = {},
+      undo_history = nil,
     }
     local payload = vim.fn.json_encode(M.state)
     async_write(M.config.state_file, payload)
@@ -107,10 +107,16 @@ function M.load_state()
     history = decoded.history or {},
     sort_mode = decoded.sort_mode or M.config.sort_mode,
     usage = decoded.usage or {},
+    undo_history = decoded.undo_history,
   }
+
+  if M.state.undo_history then
+    history.deserialize(M.state.undo_history)
+  end
 end
 
 function M.save_state()
+  M.state.undo_history = history.serialize()
   local payload = vim.fn.json_encode(M.state)
   async_write(M.config.state_file, payload)
 end
@@ -163,72 +169,25 @@ function M.apply(theme, from_manual)
     vim.cmd("syntax reset")
   end
 
-  if M.config.animate and M.config.animate.enabled then
-    local from_hl = get_hl_table()
-    -- Temporarily load new theme to get its HL
-    local temp_ok = pcall(vim.cmd.colorscheme, theme)
-    if not temp_ok then
-      vim.notify("raphael: failed to load theme for animation", vim.log.levels.ERROR)
-      return
-    end
-    local to_hl = get_hl_table()
-    -- Reset to original HL before animating
-    for group, val in pairs(from_hl) do
-      vim.api.nvim_set_hl(0, group, val)
-    end
-
-    local step_ms = M.config.animate.duration / M.config.animate.steps
-    for step = 1, M.config.animate.steps do
-      vim.defer_fn(function()
-        local t = step / M.config.animate.steps
-        for group, val in pairs(to_hl) do
-          local from_val = from_hl[group] or {}
-          local new_val = {}
-          if val.fg then
-            new_val.fg = lerp_color(from_val.fg or val.fg, val.fg, t)
-          end
-          if val.bg then
-            new_val.bg = lerp_color(from_val.bg or val.bg, val.bg, t)
-          end
-          if val.sp then
-            new_val.sp = lerp_color(from_val.sp or val.sp, val.sp, t)
-          end
-          vim.api.nvim_set_hl(0, group, new_val)
-        end
-        if step == M.config.animate.steps then
-          -- Ensure final apply
-          pcall(vim.cmd.colorscheme, theme)
-        end
-      end, math.floor(step * step_ms))
-    end
-  else
-    local ok, err = pcall(vim.cmd.colorscheme, theme)
-    if not ok then
-      vim.notify("raphael: failed to apply theme '" .. tostring(theme) .. "': " .. tostring(err), vim.log.levels.ERROR)
-      if themes.is_available(M.config.default_theme) then
-        vim.cmd("hi clear")
-        if vim.fn.exists("syntax_on") then
-          vim.cmd("syntax reset")
-        end
-        pcall(vim.cmd.colorscheme, M.config.default_theme)
-        M.state.current = M.config.default_theme
-      end
-      M.save_state()
-      history.add(theme)
-      return
-    end
+  local ok, err = pcall(vim.cmd.colorscheme, theme)
+  if not ok then
+    vim.notify("raphael: failed to apply theme '" .. tostring(theme) .. "': " .. tostring(err), vim.log.levels.ERROR)
+    return
   end
 
   M.state.current = theme
-  M.add_to_history(theme)
   M.state.usage = M.state.usage or {}
   M.state.usage[theme] = (M.state.usage[theme] or 0) + 1
 
+  -- only push to undo/redo stack if applied manually
   if from_manual then
+    history.add(theme)
     M.state.saved = theme
   end
 
+  M.add_to_history(theme) -- for state persistence
   M.save_state()
+
   vim.notify("raphael: applied " .. theme)
 end
 
@@ -311,6 +270,10 @@ end
 function M.setup(user_config)
   user_config = user_config or {}
   M.config = vim.tbl_deep_extend("force", M.defaults, user_config)
+
+  if M.config.history_max_size then
+    history.max_size = M.config.history_max_size
+  end
 
   themes.filetype_themes = user_config.filetype_themes or M.defaults.filetype_themes
 

@@ -99,6 +99,12 @@ Inside picker:
 
 `R`: Toggle reverse sorting (descending)
 
+`J`: Jump to history position
+
+`T`: Show quick stats
+
+`r`: Random theme
+
 `?`: Show help
 
 ### Commands
@@ -117,7 +123,7 @@ Inside picker:
 
 `:RaphaelHelp`: Show help
 
-`:lua require('raphael.picker').toggle_animationis()`: Animation toggle
+`:lua require('raphael.picker').toggle_animations()`: Animation toggle
 
 `:lua require('raphael.picker').toggle_debug()`: Debug mode toggle
 
