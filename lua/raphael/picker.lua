@@ -972,6 +972,28 @@ function M.open(core, opts)
     end
   end, { buffer = picker_buf, desc = "Toggle bookmark" })
 
+  vim.keymap.set("n", "?", function()
+    local help = {
+      "Raphael Picker - Keybindings:",
+      "",
+      "  j/k         - Navigate (wraps around)",
+      "  <C-j>/<C-k> - Jump to next/prev group header (wraps)",
+      "  <CR>        - Select theme",
+      "  c           - Collapse/expand group",
+      "  s           - Cycle sort mode",
+      "  /           - Search themes",
+      "  b           - Toggle bookmark",
+      "  q/<Esc>     - Quit (revert theme)",
+      "  ?           - Show this help",
+      "",
+      "Debug commands:",
+      "  :lua require('raphael.picker').toggle_debug()",
+      "  :lua require('raphael.picker').toggle_animations()",
+      "  :lua print(vim.inspect(require('raphael.picker').get_cache_stats()))",
+    }
+    vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
+  end, { buffer = picker_buf, desc = "Show help" })
+
   vim.api.nvim_create_autocmd("CursorMoved", {
     buffer = picker_buf,
     callback = function()
