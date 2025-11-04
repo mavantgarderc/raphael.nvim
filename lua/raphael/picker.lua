@@ -108,7 +108,12 @@ local function parse_line_theme(line)
   line = line:gsub("%s* 󰝧 ", "")
   local theme = line:match("([%w_%-]+)%s*$")
   if theme and theme ~= "" then
-    return theme
+    local aliases = core_ref.config.theme_aliases or {}
+    local reverse_aliases = {}
+    for real, alias in pairs(aliases) do
+      reverse_aliases[alias] = real
+    end
+    return reverse_aliases[theme] or theme
   end
   local last
   for token in line:gmatch("%S+") do
@@ -117,7 +122,12 @@ local function parse_line_theme(line)
   if last then
     last = last:gsub("^[^%w_%-]+", ""):gsub("[^%w_%-]+$", "")
     if last ~= "" then
-      return last
+      local aliases = core_ref.config.theme_aliases or {}
+      local reverse_aliases = {}
+      for real, alias in pairs(aliases) do
+        reverse_aliases[alias] = real
+      end
+      return reverse_aliases[last] or last
     end
   end
   return nil
