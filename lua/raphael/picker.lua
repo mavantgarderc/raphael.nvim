@@ -1,4 +1,6 @@
 local themes = require("raphael.themes")
+local history = require("raphael.theme_history")
+
 local M = {}
 
 local picker_buf, picker_win
@@ -22,9 +24,6 @@ local ANIM_INTERVAL = 15
 local ENABLE_ANIMATIONS = true
 local DEBUG_MODE = false
 
-local disable_sorting = false
-local reverse_sorting = false
-
 local ICON_BOOKMARK = "  "
 local ICON_CURRENT_ON = "  "
 local ICON_CURRENT_OFF = "  "
@@ -32,6 +31,9 @@ local ICON_GROUP_EXP = "  "
 local ICON_GROUP_COL = "  "
 local BLOCK_CHAR = "  "
 local ICON_SEARCH = "   "
+
+local disable_sorting = false
+local reverse_sorting = false
 
 local PALETTE_HL = {
   "Normal",
@@ -617,7 +619,7 @@ local function close_picker(revert)
       log("ERROR", "Failed to revert colorscheme", err)
     end
     if core_ref and core_ref.apply then
-      ok, err = pcall(core_ref.apply, state_ref.previous, true)
+      ok, err = pcall(core_ref.apply, state_ref.previous, false)
       if not ok then
         log("ERROR", "Failed to apply reverted theme", err)
       end
@@ -745,7 +747,7 @@ local function open_search()
     end
   end
 
-  vim.keymap.set("i", "<Esc>", function()
+  map("i", "<Esc>", function()
     search_query = ""
     render(picker_opts)
     if search_win and vim.api.nvim_win_is_valid(search_win) then
@@ -759,7 +761,7 @@ local function open_search()
     end
   end, { buffer = search_buf })
 
-  vim.keymap.set("i", "<CR>", function()
+  map("i", "<CR>", function()
     if search_win and vim.api.nvim_win_is_valid(search_win) then
       pcall(vim.api.nvim_win_close, search_win, true)
     end
@@ -828,8 +830,6 @@ function M.open(core, opts)
   picker_row = math.floor((vim.o.lines - picker_h) / 2)
   picker_col = math.floor((vim.o.columns - picker_w) / 2)
 
-  ---@diagnostic disable-next-line: unused-local
-  local sort_mode = state_ref.sort_mode or core_ref.config.sort_mode or "alpha"
   local base_title = opts.exclude_configured and "Raphael - Other Themes" or "Raphael - Configured Themes"
 
   local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
@@ -850,7 +850,9 @@ function M.open(core, opts)
   state_ref.previous = vim.g.colors_name
   log("DEBUG", "Previous theme saved", state_ref.previous)
 
-  vim.keymap.set("n", "j", function()
+  local map = vim.keymap.set
+
+  map("n", "j", function()
     local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
     local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
     local next_line = cur >= line_count and 1 or cur + 1
@@ -858,7 +860,7 @@ function M.open(core, opts)
     highlight_current_line()
   end, { buffer = picker_buf, desc = "Next line (wrap)" })
 
-  vim.keymap.set("n", "k", function()
+  map("n", "k", function()
     local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
     local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
     local prev_line = cur <= 1 and line_count or cur - 1
@@ -866,7 +868,7 @@ function M.open(core, opts)
     highlight_current_line()
   end, { buffer = picker_buf, desc = "Previous line (wrap)" })
 
-  vim.keymap.set("n", "<C-j>", function()
+  map("n", "<C-j>", function()
     if #header_lines == 0 then
       log("DEBUG", "No header lines found")
       return
@@ -888,7 +890,7 @@ function M.open(core, opts)
     end
   end, { buffer = picker_buf, desc = "Next group header" })
 
-  vim.keymap.set("n", "<C-k>", function()
+  map("n", "<C-k>", function()
     if #header_lines == 0 then
       log("DEBUG", "No header lines found")
       return
@@ -910,15 +912,15 @@ function M.open(core, opts)
     end
   end, { buffer = picker_buf, desc = "Previous group header" })
 
-  vim.keymap.set("n", "q", function()
+  map("n", "q", function()
     close_picker(true)
   end, { buffer = picker_buf, desc = "Quit and revert" })
 
-  vim.keymap.set("n", "<Esc>", function()
+  map("n", "<Esc>", function()
     close_picker(true)
   end, { buffer = picker_buf, desc = "Quit and revert" })
 
-  vim.keymap.set("n", "<CR>", function()
+  map("n", "<CR>", function()
     local line = vim.api.nvim_get_current_line()
     local hdr = parse_line_header(line)
     if hdr then
@@ -954,7 +956,7 @@ function M.open(core, opts)
     close_picker(false)
   end, { buffer = picker_buf, desc = "Select theme" })
 
-  vim.keymap.set("n", "c", function()
+  map("n", "c", function()
     local line = vim.api.nvim_get_current_line()
     local hdr = parse_line_header(line)
     if not hdr then
@@ -986,56 +988,50 @@ function M.open(core, opts)
     end
   end, { buffer = picker_buf, desc = "Collapse/expand group" })
 
-  vim.keymap.set("n", "s", function()
+  map("n", "s", function()
     local sort_modes = { "alpha", "recent", "usage" }
     local idx = vim.fn.index(sort_modes, state_ref.sort_mode or "alpha") + 1
     state_ref.sort_mode = sort_modes[(idx % #sort_modes) + 1]
     if core_ref and core_ref.save_state then
       pcall(core_ref.save_state)
     end
-    ---@diagnostic disable-next-line: redefined-local
     local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
-    ---@diagnostic disable-next-line: redefined-local
-    local title_suffix = display_sort .. (reverse_sorting and " reverse " or "")
+    local title_suffix = display_sort .. (reverse_sorting and " ↓" or "")
     local new_title = base_title .. " (Sort: " .. title_suffix .. ")"
     vim.api.nvim_win_set_config(picker_win, { title = new_title })
     log("DEBUG", "Sort mode changed", state_ref.sort_mode)
     render(opts)
   end, { buffer = picker_buf, desc = "Cycle sort mode" })
 
-  vim.keymap.set("n", "S", function()
+  map("n", "S", function()
     disable_sorting = not disable_sorting
     if core_ref and core_ref.save_state then
       pcall(core_ref.save_state)
     end
-    ---@diagnostic disable-next-line: redefined-local
     local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
-    ---@diagnostic disable-next-line: redefined-local
-    local title_suffix = display_sort .. (reverse_sorting and " reverse " or "")
+    local title_suffix = display_sort .. (reverse_sorting and " ↓" or "")
     vim.api.nvim_win_set_config(picker_win, { title = base_title .. " (Sort: " .. title_suffix .. ")" })
     vim.notify(string.format("[Raphael] Sorting: %s", disable_sorting and "DISABLED" or "ENABLED"))
     log("DEBUG", "Sorting toggled", disable_sorting)
     render(opts)
   end, { buffer = picker_buf, desc = "Toggle sorting on/off" })
 
-  vim.keymap.set("n", "R", function()
+  map("n", "R", function()
     reverse_sorting = not reverse_sorting
     if core_ref and core_ref.save_state then
       pcall(core_ref.save_state)
     end
-    ---@diagnostic disable-next-line: redefined-local
     local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
-    ---@diagnostic disable-next-line: redefined-local
-    local title_suffix = display_sort .. (reverse_sorting and " reverse " or "")
+    local title_suffix = display_sort .. (reverse_sorting and " ↓" or "")
     vim.api.nvim_win_set_config(picker_win, { title = base_title .. " (Sort: " .. title_suffix .. ")" })
     vim.notify(string.format("[Raphael] Reverse sort: %s", reverse_sorting and "ON" or "OFF"))
     log("DEBUG", "Reverse sorting toggled", reverse_sorting)
     render(opts)
   end, { buffer = picker_buf, desc = "Toggle reverse sorting" })
 
-  vim.keymap.set("n", "/", open_search, { buffer = picker_buf, desc = "Search themes" })
+  map("n", "/", open_search, { buffer = picker_buf, desc = "Search themes" })
 
-  vim.keymap.set("n", "b", function()
+  map("n", "b", function()
     local line = vim.api.nvim_get_current_line()
     local theme = parse_line_theme(line)
     if theme then
@@ -1053,26 +1049,138 @@ function M.open(core, opts)
     end
   end, { buffer = picker_buf, desc = "Toggle bookmark" })
 
-  vim.keymap.set("n", "?", function()
+  map("n", "u", function()
+    local theme = history.undo(function(t)
+      if core_ref and core_ref.apply then
+        pcall(core_ref.apply, t, false)
+      end
+    end)
+    if theme then
+      pcall(M.update_palette, theme)
+      render(opts)
+      highlight_current_line()
+    end
+  end, { buffer = picker_buf, desc = "Undo theme change" })
+
+  map("n", "<C-r>", function()
+    local theme = history.redo(function(t)
+      if core_ref and core_ref.apply then
+        pcall(core_ref.apply, t, false)
+      end
+    end)
+    if theme then
+      pcall(M.update_palette, theme)
+      render(opts)
+      highlight_current_line()
+    end
+  end, { buffer = picker_buf, desc = "Redo theme change" })
+
+  map("n", "r", function()
+    local all_themes = themes.get_all_themes()
+    if #all_themes == 0 then
+      vim.notify("No themes available", vim.log.levels.WARN)
+      return
+    end
+    math.randomseed(os.time())
+    local random_idx = math.random(#all_themes)
+    local random_theme = all_themes[random_idx]
+    if themes.is_available(random_theme) then
+      if core_ref and core_ref.apply then
+        local ok, err = pcall(core_ref.apply, random_theme, true)
+        if ok then
+          pcall(M.update_palette, random_theme)
+          render(opts)
+          highlight_current_line()
+          vim.notify("🎲 Random: " .. random_theme, vim.log.levels.INFO)
+        else
+          log("ERROR", "Failed to apply random theme", { theme = random_theme, error = err })
+        end
+      end
+    else
+      vim.notify("Random theme not available", vim.log.levels.WARN)
+    end
+  end, { buffer = picker_buf, desc = "Apply random theme" })
+
+  -- History viewer
+  map("n", "H", function()
+    history.show()
+  end, { buffer = picker_buf, desc = "Show theme history" })
+
+  -- Jump to history position
+  map("n", "J", function()
+    vim.ui.input({
+      prompt = string.format("Jump to position (1-%d): ", #history.stack),
+      default = tostring(history.index),
+    }, function(input)
+      if not input then
+        return
+      end
+
+      local pos = tonumber(input)
+      if pos then
+        local theme = history.jump(pos, function(t)
+          if core_ref and core_ref.apply then
+            pcall(core_ref.apply, t, false)
+          end
+        end)
+        if theme then
+          pcall(M.update_palette, theme)
+          render(opts)
+          highlight_current_line()
+        end
+      else
+        vim.notify("Invalid position", vim.log.levels.ERROR)
+      end
+    end)
+  end, { buffer = picker_buf, desc = "Jump to history position" })
+
+  map("n", "T", function()
+    local stats = history.stats()
+
+    if stats.total == 0 then
+      vim.notify("No history data", vim.log.levels.INFO)
+      return
+    end
+
+    local lines = {
+      " Theme History:",
+      "",
+      string.format("Position: %d/%d", stats.position, stats.total),
+      string.format("Unique: %d themes", stats.unique_themes),
+      string.format("Most used: %s (%dx)", stats.most_used, stats.most_used_count),
+    }
+
+    vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
+  end, { buffer = picker_buf, desc = "Show quick stats" })
+
+  map("n", "?", function()
     local help = {
       "Raphael Picker - Keybindings:",
       "",
+      "Navigation:",
       "  `j`/`k`         - Navigate (wraps around)",
       "  `<C-j>`/`<C-k>` - Jump to next/prev group header (wraps)",
-      "  `<CR>`          - Select theme",
-      "  `c`             - Collapse/expand group",
-      "  `s`             - Cycle sort mode",
-      "  `S`             - Toggle sorting on/off (show original config order)",
-      "  `R`             - Toggle reverse sorting (descending)",
-      "  `/`             - Search themes",
-      "  `b`             - Toggle bookmark",
+      "",
+      "Actions:",
+      "  `<CR>`        - Select theme",
+      "  `c`           - Collapse/expand group",
+      "  `s`           - Cycle sort mode",
+      "  `S`           - Toggle sorting on/off",
+      "  `R`           - Toggle reverse sorting (descending)",
+      "  `/`           - Search themes",
+      "  `b`           - Toggle bookmark",
+      "",
+      "History (picker-only):",
+      "  `u`           - Undo theme change",
+      "  `<C-r>`       - Redo theme change",
+      "  `H`           - Show full history",
+      "  `J`           - Jump to history position",
+      "  `T`           - Show quick stats",
+      "  `r`           - Apply random theme",
+      "",
+      "Other:",
       "  `q`/`<Esc>`     - Quit (revert theme)",
       "  `?`             - Show this help",
-      "",
-      "Debug commands:",
-      "  `:lua require('raphael.picker').toggle_debug()`",
-      "  `:lua require('raphael.picker').toggle_animations()`",
-      "  `:lua print(vim.inspect(require('raphael.picker').get_cache_stats()))`",
     }
     vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
   end, { buffer = picker_buf, desc = "Show help" })
