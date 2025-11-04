@@ -6,32 +6,41 @@ local history = require("raphael.theme_history")
 
 function M.setup(core)
   local leader = core.config.leader
+  local mappings = core.config.mappings or {}
 
-  map("n", leader .. "p", function()
+  map("n", leader .. mappings.picker, function()
     core.open_picker({ only_configured = true })
   end, { desc = "raphael: picker (configured themes)" })
 
-  map("n", leader .. "/", function()
+  map("n", leader .. mappings.search, function()
     core.open_picker({ exclude_configured = true })
   end, { desc = "raphael: picker (all except configured)" })
 
-  map("n", leader .. "a", function()
+  map("n", leader .. mappings.auto, function()
     core.toggle_auto()
   end, { desc = "raphael: toggle auto-apply" })
 
-  map("n", leader .. "R", function()
+  map("n", leader .. mappings.refresh, function()
     core.refresh_and_reload()
   end, { desc = "raphael: refresh and reload current" })
 
-  map("n", leader .. "s", function()
+  map("n", leader .. mappings.status, function()
     core.show_status()
   end, { desc = "raphael: show status" })
 
-  map("n", "<leader>tu", history.undo, { desc = "Undo theme" })
+  map("n", leader .. mappings.undo, function()
+    history.undo(function(theme)
+      core.apply(theme, false)
+    end)
+  end, { desc = "raphael: undo theme" })
 
-  map("n", "<leader>tr", history.redo, { desc = "Redo theme" })
+  map("n", leader .. mappings.redo, function()
 
-  local mappings = core.config.mappings or {}
+    history.redo(function(theme)
+      core.apply(theme, false)
+    end)
+  end, { desc = "raphael: redo theme" })
+
   if mappings.next then
     map("n", leader .. mappings.next, function()
       local all_themes = themes.get_all_themes()

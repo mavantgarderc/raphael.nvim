@@ -1,10 +1,22 @@
 local M = {}
 
 local themes = require("raphael.themes")
+local history = require("raphael.theme_history")
 
 M.defaults = {
   leader = "<leader>t",
-  mappings = { picker = "p", next = ">", previous = "<", random = "r" },
+  mappings = {
+        picker = "p",
+        next = ">",
+        previous = "<",
+        search = "/",
+        auto = "a",
+        refresh = "R",
+        status = "s",
+        undo = "u",
+        redo = "r",
+        random = "t",
+    },
   default_theme = "kanagawa-paper-ink",
   state_file = vim.fn.stdpath("data") .. "/raphael/state.json",
   theme_map = nil,
@@ -202,6 +214,7 @@ function M.apply(theme, from_manual)
         M.state.current = M.config.default_theme
       end
       M.save_state()
+      history.add(theme)
       return
     end
   end
