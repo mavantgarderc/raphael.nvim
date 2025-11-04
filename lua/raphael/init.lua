@@ -12,6 +12,7 @@ M.defaults = {
   animate = { enabled = false, duration = 200, steps = 10 },
   sort_mode = "alpha",
   custom_sorts = {},
+  theme_aliases = {},
 }
 
 M.state = nil
@@ -303,6 +304,7 @@ function M.setup(user_config)
   local all_installed = vim.tbl_keys(themes.installed)
   table.sort(all_installed)
   themes.theme_map = user_config.theme_map or all_installed
+  M.config.theme_aliases = user_config.theme_aliases or M.defaults.theme_aliases
 
   M.load_state()
 
@@ -381,6 +383,7 @@ function M.setup(user_config)
         end
       end
 
+      ---@diagnostic disable-next-line: lowercase-global
       first_ft_fired = true
     end,
   })

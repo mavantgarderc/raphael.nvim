@@ -27,7 +27,7 @@ local ICON_CURRENT_ON = "  "
 local ICON_CURRENT_OFF = "  "
 local ICON_GROUP_EXP = "  "
 local ICON_GROUP_COL = "  "
-local BLOCK_CHAR = " 󱡌 "
+local BLOCK_CHAR = "  "
 local ICON_SEARCH = "   "
 
 local PALETTE_HL = {
@@ -267,18 +267,17 @@ local function highlight_current_line()
   pcall(vim.api.nvim_buf_clear_namespace, picker_buf, HIGHLIGHT_NS, 0, -1)
 
   local line_text = vim.api.nvim_buf_get_lines(picker_buf, cur_line, cur_line + 1, false)[1] or ""
-  if line_text:match("^" .. ICON_GROUP_EXP) or line_text:match("^" .. ICON_GROUP_COL) then
-    return
+  if not line_text:match("^" .. ICON_GROUP_EXP) and not line_text:match("^" .. ICON_GROUP_COL) then
+    pcall(
+      vim.highlight.range,
+      picker_buf,
+      HIGHLIGHT_NS,
+      "Visual",
+      { cur_line, 0 },
+      { cur_line, -1 },
+      { inclusive = false, priority = 100 }
+    )
   end
-  pcall(
-    vim.highlight.range,
-    picker_buf,
-    HIGHLIGHT_NS,
-    "Visual",
-    { start_line = cur_line, start_col = 0 },
-    { end_line = cur_line, end_col = -1 },
-    { inclusive = false, priority = 100 }
-  )
 end
 
 local function render_internal(opts)
@@ -344,22 +343,21 @@ local function render_internal(opts)
 
   local function sort_filtered(filtered)
     if sort_mode == "alpha" then
-      table.sort(filtered, function(a, b)
-        return a:lower() < b:lower()
-      end)
+      table.sort(filtered, function(a, b) return a:lower() < b:lower() end)  -- Case-insensitive alpha
     elseif sort_mode == "recent" then
       table.sort(filtered, function(a, b)
         local idx_a = vim.fn.index(state_ref.history or {}, a) or -1
         local idx_b = vim.fn.index(state_ref.history or {}, b) or -1
-        return idx_a > idx_b
+        return idx_a > idx_b  -- Higher index = more recent (since history[1] is newest)
       end)
     elseif sort_mode == "usage" then
       table.sort(filtered, function(a, b)
         local count_a = (state_ref.usage or {})[a] or 0
         local count_b = (state_ref.usage or {})[b] or 0
-        return count_a > count_b
+        return count_a > count_b  -- Descending usage
       end)
     end
+    -- Custom modes can be added via config.custom_sorts = {name = func}
     local custom_sorts = core_ref.config.custom_sorts or {}
     local custom_func = custom_sorts[sort_mode]
     if custom_func then
@@ -385,10 +383,11 @@ local function render_internal(opts)
       local visible_count = math.max(1, math.floor(#bookmark_filtered * ratio))
       for i = 1, visible_count do
         local t = bookmark_filtered[i]
+        local display = core_ref.config.theme_aliases[t] or t
         local warning = themes.is_available(t) and "" or " 󰝧 "
         local b = " "
         local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
-        table.insert(lines, "  " .. warning .. b .. s .. t)
+        table.insert(lines, "  " .. warning .. b .. s .. display)
       end
     end
   end
@@ -409,24 +408,25 @@ local function render_internal(opts)
       local visible_count = math.max(1, math.floor(#recent_filtered * ratio))
       for i = 1, visible_count do
         local t = recent_filtered[i]
+        local display = core_ref.config.theme_aliases[t] or t
         local warning = themes.is_available(t) and "" or " 󰝧 "
         local b = bookmarks[t] and ICON_BOOKMARK or " "
         local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
-        table.insert(lines, "  " .. warning .. b .. s .. t)
+        table.insert(lines, "  " .. warning .. b .. s .. display)
       end
     end
   end
 
   if not is_display_grouped then
     local flat_candidates = display_map
-    local flat_filtered = search_query == "" and flat_candidates
-      or vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
+    local flat_filtered = search_query == "" and flat_candidates or vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
     sort_filtered(flat_filtered)
     for _, t in ipairs(flat_filtered) do
+      local display = core_ref.config.theme_aliases[t] or t
       local warning = themes.is_available(t) and "" or " 󰝧 "
       local b = bookmarks[t] and ICON_BOOKMARK or " "
       local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
-      table.insert(lines, string.format("%s%s %s %s", warning, b, s, t))
+      table.insert(lines, string.format("%s%s %s %s", warning, b, s, display))
     end
   else
     for group, items in pairs(display_map) do
@@ -444,10 +444,11 @@ local function render_internal(opts)
           local visible_count = math.max(1, math.floor(#filtered_items * ratio))
           for i = 1, visible_count do
             local t = filtered_items[i]
+            local display = core_ref.config.theme_aliases[t] or t
             local warning = themes.is_available(t) and "" or " 󰝧 "
             local b = bookmarks[t] and ICON_BOOKMARK or " "
             local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
-            table.insert(lines, string.format("  %s%s %s %s", warning, b, s, t))
+            table.insert(lines, string.format("  %s%s %s %s", warning, b, s, display))
           end
         end
       end
@@ -962,9 +963,11 @@ function M.open(core, opts)
     if theme then
       core_ref.toggle_bookmark(theme)
       bookmarks = {}
-      for _, b in ipairs(state_ref.bookmarks or {}) do
-        if type(b) == "string" and b ~= "" then
-          bookmarks[b] = true
+      if state_ref.bookmarks and type(state_ref.bookmarks) == "table" then
+        for _, b in ipairs(state_ref.bookmarks) do
+          if type(b) == "string" and b ~= "" then
+            bookmarks[b] = true
+          end
         end
       end
       render(opts)
@@ -976,20 +979,20 @@ function M.open(core, opts)
     local help = {
       "Raphael Picker - Keybindings:",
       "",
-      "  j/k         - Navigate (wraps around)",
-      "  <C-j>/<C-k> - Jump to next/prev group header (wraps)",
-      "  <CR>        - Select theme",
-      "  c           - Collapse/expand group",
-      "  s           - Cycle sort mode",
-      "  /           - Search themes",
-      "  b           - Toggle bookmark",
-      "  q/<Esc>     - Quit (revert theme)",
-      "  ?           - Show this help",
+      "  `j`/`k`         - Navigate (wraps around)",
+      "  `<C-j>`/`<C-k>` - Jump to next/prev group header (wraps)",
+      "  `<CR>`          - Select theme",
+      "  `c`             - Collapse/expand group",
+      "  `s`             - Cycle sort mode",
+      "  `/`             - Search themes",
+      "  `b`             - Toggle bookmark",
+      "  `q`/`<Esc>`     - Quit (revert theme)",
+      "  `?`             - Show this help",
       "",
       "Debug commands:",
-      "  :lua require('raphael.picker').toggle_debug()",
-      "  :lua require('raphael.picker').toggle_animations()",
-      "  :lua print(vim.inspect(require('raphael.picker').get_cache_stats()))",
+      "  `:lua require('raphael.picker').toggle_debug()`",
+      "  `:lua require('raphael.picker').toggle_animations()`",
+      "  `:lua print(vim.inspect(require('raphael.picker').get_cache_stats()))`",
     }
     vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
   end, { buffer = picker_buf, desc = "Show help" })
