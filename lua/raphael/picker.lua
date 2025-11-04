@@ -458,7 +458,8 @@ local function render_internal(opts)
 
   if not is_display_grouped then
     local flat_candidates = display_map
-    local flat_filtered = search_query == "" and flat_candidates or vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
+    local flat_filtered = search_query == "" and flat_candidates
+      or vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
     sort_filtered(flat_filtered)
     for _, t in ipairs(flat_filtered) do
       local display = core_ref.config.theme_aliases[t] or t
