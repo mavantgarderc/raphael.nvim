@@ -78,8 +78,6 @@ luaopts = {
 
 `<leader>ts`: Show status
 
-`<leader>th`: Show help
-
 Inside picker:
 
 `<CR>`: Apply theme
@@ -95,6 +93,8 @@ Inside picker:
 `<C-j>` & `<C-k>`: Next/previous Header
 
 `s`: Change sort of theme list
+
+`?`: Show help
 
 ### Commands
 
@@ -112,3 +112,8 @@ Inside picker:
 
 `:RaphaelHelp`: Show help
 
+`:lua require('raphael.picker').toggle_animationis()`: Animation toggle
+
+`:lua require('raphael.picker').toggle_debug()`: Debug mode toggle
+
+`:lua print(vim.inspect(require('raphael.picker').get_cache_stats()))`: Cache Statistics

@@ -31,11 +31,6 @@ function M.setup(core)
     core.show_status()
   end, { desc = "raphael: show status" })
 
-  -- Show help (keymaps)
-  map("n", leader .. "h", function()
-    core.show_help()
-  end, { desc = "raphael: show help" })
-
   -- Keep next/previous/random
   local mappings = core.config.mappings or {}
   if mappings.next then

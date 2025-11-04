@@ -265,54 +265,6 @@ function M.show_status()
   )
 end
 
-function M.show_help()
-  local help_lines = {
-    "=== Raphael Theme Manager ===",
-    "",
-    "Keymaps:",
-    "  <leader>tp : Open picker (configured themes only)",
-    "  <leader>t/ : Open picker (all other installed themes)",
-    "  <leader>ta : Toggle auto-apply by filetype",
-    "  <leader>tR : Refresh theme list and reload current",
-    "  <leader>ts : Show current theme status",
-    "  <leader>th : Show this help",
-    "",
-    "Inside Picker:",
-    "  <CR>   : Apply theme",
-    "  /      : Search themes",
-    "  b      : Toggle bookmark",
-    "  c      : Collapse/expand group",
-    "  q/Esc  : Cancel (revert to previous)",
-    "",
-    "Theme Persistence:",
-    "  - Manual selections saved for next session",
-    "  - Auto-apply changes not saved",
-    "  - Last 10 themes kept in history",
-  }
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, help_lines)
-  vim.api.nvim_set_option_value("buftype", "nofile", { buf = buf })
-  vim.api.nvim_set_option_value("modifiable", false, { buf = buf })
-  local width = vim.o.columns
-  local height = vim.o.lines
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    width = math.floor(width * 0.6),
-    height = math.floor(height * 0.6),
-    col = math.floor((width - width * 0.6) / 2),
-    row = math.floor((height - height * 0.6) / 2),
-    style = "minimal",
-    border = "rounded",
-    title = "Raphael Help",
-  })
-  vim.keymap.set("n", "q", function()
-    vim.api.nvim_win_close(win, true)
-  end, { buffer = buf })
-  vim.keymap.set("n", "<Esc>", function()
-    vim.api.nvim_win_close(win, true)
-  end, { buffer = buf })
-end
-
 function M.export_for_session()
   return string.format(
     [[
