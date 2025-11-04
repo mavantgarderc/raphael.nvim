@@ -43,6 +43,7 @@ return {
 ### Configuration
 
 Configure in your plugin spec's opts table. Defaults shown below:
+
 ```lua
 luaopts = {
   leader = "<leader>t",
@@ -93,6 +94,10 @@ Inside picker:
 `<C-j>` & `<C-k>`: Next/previous Header
 
 `s`: Change sort of theme list
+
+`S`: Toggle sorting on/off
+
+`R`: Toggle reverse sorting (descending)
 
 `?`: Show help
 
