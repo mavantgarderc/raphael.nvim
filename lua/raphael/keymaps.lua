@@ -2,7 +2,6 @@ local M = {}
 
 local map = vim.keymap.set
 local themes = require("raphael.themes")
-local history = require("raphael.theme_history")
 
 function M.setup(core)
   local leader = core.config.leader
@@ -12,7 +11,7 @@ function M.setup(core)
     core.open_picker({ only_configured = true })
   end, { desc = "raphael: picker (configured themes)" })
 
-  map("n", leader .. mappings.search, function()
+  map("n", leader .. mappings.others, function()
     core.open_picker({ exclude_configured = true })
   end, { desc = "raphael: picker (all except configured)" })
 
@@ -27,19 +26,6 @@ function M.setup(core)
   map("n", leader .. mappings.status, function()
     core.show_status()
   end, { desc = "raphael: show status" })
-
-  map("n", leader .. mappings.undo, function()
-    history.undo(function(theme)
-      core.apply(theme, false)
-    end)
-  end, { desc = "raphael: undo theme" })
-
-  map("n", leader .. mappings.redo, function()
-
-    history.redo(function(theme)
-      core.apply(theme, false)
-    end)
-  end, { desc = "raphael: redo theme" })
 
   if mappings.next then
     map("n", leader .. mappings.next, function()
