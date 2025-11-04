@@ -139,6 +139,10 @@ function M.apply(theme, from_manual)
     return
   end
 
+  if vim.g.colors_name == theme then
+    return
+  end
+
   M.state.previous = M.state.current
 
   vim.cmd("hi clear")
@@ -146,7 +150,6 @@ function M.apply(theme, from_manual)
     vim.cmd("syntax reset")
   end
 
-  local apply_success = false
   if M.config.animate and M.config.animate.enabled then
     local from_hl = get_hl_table()
     -- Temporarily load new theme to get its HL
@@ -185,7 +188,6 @@ function M.apply(theme, from_manual)
         end
       end, math.floor(step * step_ms))
     end
-    apply_success = true
   else
     local ok, err = pcall(vim.cmd.colorscheme, theme)
     if not ok then
@@ -201,22 +203,19 @@ function M.apply(theme, from_manual)
       M.save_state()
       return
     end
-    apply_success = ok
   end
 
-  if apply_success then
-    M.state.current = theme
-    M.add_to_history(theme)
-    M.state.usage = M.state.usage or {}
-    M.state.usage[theme] = (M.state.usage[theme] or 0) + 1
+  M.state.current = theme
+  M.add_to_history(theme)
+  M.state.usage = M.state.usage or {}
+  M.state.usage[theme] = (M.state.usage[theme] or 0) + 1
 
-    if from_manual then
-      M.state.saved = theme
-    end
-
-    M.save_state()
-    vim.notify("raphael: applied " .. theme)
+  if from_manual then
+    M.state.saved = theme
   end
+
+  M.save_state()
+  vim.notify("raphael: applied " .. theme)
 end
 
 function M.toggle_auto()
