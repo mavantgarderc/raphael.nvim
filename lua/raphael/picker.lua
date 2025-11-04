@@ -22,6 +22,9 @@ local ANIM_INTERVAL = 15
 local ENABLE_ANIMATIONS = true
 local DEBUG_MODE = false
 
+local disable_sorting = false
+local reverse_sorting = false
+
 local ICON_BOOKMARK = "  "
 local ICON_CURRENT_ON = "  "
 local ICON_CURRENT_OFF = "  "
@@ -352,26 +355,52 @@ local function render_internal(opts)
   local sort_mode = state_ref.sort_mode or core_ref.config.sort_mode or "alpha"
 
   local function sort_filtered(filtered)
-    if sort_mode == "alpha" then
-      table.sort(filtered, function(a, b) return a:lower() < b:lower() end)  -- Case-insensitive alpha
-    elseif sort_mode == "recent" then
-      table.sort(filtered, function(a, b)
-        local idx_a = vim.fn.index(state_ref.history or {}, a) or -1
-        local idx_b = vim.fn.index(state_ref.history or {}, b) or -1
-        return idx_a > idx_b  -- Higher index = more recent (since history[1] is newest)
-      end)
-    elseif sort_mode == "usage" then
-      table.sort(filtered, function(a, b)
-        local count_a = (state_ref.usage or {})[a] or 0
-        local count_b = (state_ref.usage or {})[b] or 0
-        return count_a > count_b  -- Descending usage
-      end)
+    if disable_sorting then
+      return
     end
-    -- Custom modes can be added via config.custom_sorts = {name = func}
+
+    local function cmp_alpha(a, b)
+      if reverse_sorting then
+        return a:lower() > b:lower()
+      end
+      return a:lower() < b:lower()
+    end
+
+    local function cmp_recent(a, b)
+      local idx_a = vim.fn.index(state_ref.history or {}, a) or -1
+      local idx_b = vim.fn.index(state_ref.history or {}, b) or -1
+      if reverse_sorting then
+        return idx_a < idx_b
+      end
+      return idx_a > idx_b
+    end
+
+    local function cmp_usage(a, b)
+      local count_a = (state_ref.usage or {})[a] or 0
+      local count_b = (state_ref.usage or {})[b] or 0
+      if reverse_sorting then
+        return count_a < count_b
+      end
+      return count_a > count_b
+    end
+
+    if sort_mode == "alpha" then
+      table.sort(filtered, cmp_alpha)
+    elseif sort_mode == "recent" then
+      table.sort(filtered, cmp_recent)
+    elseif sort_mode == "usage" then
+      table.sort(filtered, cmp_usage)
+    end
+
     local custom_sorts = core_ref.config.custom_sorts or {}
     local custom_func = custom_sorts[sort_mode]
     if custom_func then
       table.sort(filtered, custom_func)
+      if reverse_sorting then
+        for i = 1, math.floor(#filtered / 2) do
+          filtered[i], filtered[#filtered - i + 1] = filtered[#filtered - i + 1], filtered[i]
+        end
+      end
     end
   end
 
@@ -798,9 +827,13 @@ function M.open(core, opts)
   picker_row = math.floor((vim.o.lines - picker_h) / 2)
   picker_col = math.floor((vim.o.columns - picker_w) / 2)
 
+  ---@diagnostic disable-next-line: unused-local
   local sort_mode = state_ref.sort_mode or core_ref.config.sort_mode or "alpha"
   local base_title = opts.exclude_configured and "Raphael - Other Themes" or "Raphael - Configured Themes"
-  local title = base_title .. " (Sort: " .. sort_mode .. ")"
+
+  local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
+  local title_suffix = display_sort .. (reverse_sorting and " ↓" or "")
+  local title = base_title .. " (Sort: " .. title_suffix .. ")"
 
   picker_win = vim.api.nvim_open_win(picker_buf, true, {
     relative = "editor",
@@ -959,11 +992,45 @@ function M.open(core, opts)
     if core_ref and core_ref.save_state then
       pcall(core_ref.save_state)
     end
-    local new_title = base_title .. " (Sort: " .. state_ref.sort_mode .. ")"
+    ---@diagnostic disable-next-line: redefined-local
+    local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
+    ---@diagnostic disable-next-line: redefined-local
+    local title_suffix = display_sort .. (reverse_sorting and " reverse " or "")
+    local new_title = base_title .. " (Sort: " .. title_suffix .. ")"
     vim.api.nvim_win_set_config(picker_win, { title = new_title })
     log("DEBUG", "Sort mode changed", state_ref.sort_mode)
     render(opts)
   end, { buffer = picker_buf, desc = "Cycle sort mode" })
+
+  vim.keymap.set("n", "S", function()
+    disable_sorting = not disable_sorting
+    if core_ref and core_ref.save_state then
+      pcall(core_ref.save_state)
+    end
+    ---@diagnostic disable-next-line: redefined-local
+    local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
+    ---@diagnostic disable-next-line: redefined-local
+    local title_suffix = display_sort .. (reverse_sorting and " reverse " or "")
+    vim.api.nvim_win_set_config(picker_win, { title = base_title .. " (Sort: " .. title_suffix .. ")" })
+    vim.notify(string.format("[Raphael] Sorting: %s", disable_sorting and "DISABLED" or "ENABLED"))
+    log("DEBUG", "Sorting toggled", disable_sorting)
+    render(opts)
+  end, { buffer = picker_buf, desc = "Toggle sorting on/off" })
+
+  vim.keymap.set("n", "R", function()
+    reverse_sorting = not reverse_sorting
+    if core_ref and core_ref.save_state then
+      pcall(core_ref.save_state)
+    end
+    ---@diagnostic disable-next-line: redefined-local
+    local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
+    ---@diagnostic disable-next-line: redefined-local
+    local title_suffix = display_sort .. (reverse_sorting and " reverse " or "")
+    vim.api.nvim_win_set_config(picker_win, { title = base_title .. " (Sort: " .. title_suffix .. ")" })
+    vim.notify(string.format("[Raphael] Reverse sort: %s", reverse_sorting and "ON" or "OFF"))
+    log("DEBUG", "Reverse sorting toggled", reverse_sorting)
+    render(opts)
+  end, { buffer = picker_buf, desc = "Toggle reverse sorting" })
 
   vim.keymap.set("n", "/", open_search, { buffer = picker_buf, desc = "Search themes" })
 
@@ -994,6 +1061,8 @@ function M.open(core, opts)
       "  `<CR>`          - Select theme",
       "  `c`             - Collapse/expand group",
       "  `s`             - Cycle sort mode",
+      "  `S`             - Toggle sorting on/off (show original config order)",
+      "  `R`             - Toggle reverse sorting (descending)",
       "  `/`             - Search themes",
       "  `b`             - Toggle bookmark",
       "  `q`/`<Esc>`     - Quit (revert theme)",
