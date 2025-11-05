@@ -1,5 +1,6 @@
 local themes = require("raphael.themes")
 local history = require("raphael.theme_history")
+local map = vim.keymap.set
 
 local M = {}
 
@@ -833,7 +834,7 @@ function M.open(core, opts)
   local base_title = opts.exclude_configured and "Raphael - Other Themes" or "Raphael - Configured Themes"
 
   local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
-  local title_suffix = display_sort .. (reverse_sorting and " ↓" or "")
+  local title_suffix = display_sort .. (reverse_sorting and " revserse " or "")
   local title = base_title .. " (Sort: " .. title_suffix .. ")"
 
   picker_win = vim.api.nvim_open_win(picker_buf, true, {
@@ -849,8 +850,6 @@ function M.open(core, opts)
 
   state_ref.previous = vim.g.colors_name
   log("DEBUG", "Previous theme saved", state_ref.previous)
-
-  local map = vim.keymap.set
 
   map("n", "j", function()
     local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
@@ -995,8 +994,10 @@ function M.open(core, opts)
     if core_ref and core_ref.save_state then
       pcall(core_ref.save_state)
     end
+    ---@diagnostic disable-next-line: redefined-local
     local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
-    local title_suffix = display_sort .. (reverse_sorting and " ↓" or "")
+    ---@diagnostic disable-next-line: redefined-local
+    local title_suffix = display_sort .. (reverse_sorting and " revserse " or "")
     local new_title = base_title .. " (Sort: " .. title_suffix .. ")"
     vim.api.nvim_win_set_config(picker_win, { title = new_title })
     log("DEBUG", "Sort mode changed", state_ref.sort_mode)
@@ -1008,8 +1009,10 @@ function M.open(core, opts)
     if core_ref and core_ref.save_state then
       pcall(core_ref.save_state)
     end
+    ---@diagnostic disable-next-line: redefined-local
     local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
-    local title_suffix = display_sort .. (reverse_sorting and " ↓" or "")
+    ---@diagnostic disable-next-line: redefined-local
+    local title_suffix = display_sort .. (reverse_sorting and " revserse " or "")
     vim.api.nvim_win_set_config(picker_win, { title = base_title .. " (Sort: " .. title_suffix .. ")" })
     vim.notify(string.format("[Raphael] Sorting: %s", disable_sorting and "DISABLED" or "ENABLED"))
     log("DEBUG", "Sorting toggled", disable_sorting)
@@ -1021,8 +1024,10 @@ function M.open(core, opts)
     if core_ref and core_ref.save_state then
       pcall(core_ref.save_state)
     end
+    ---@diagnostic disable-next-line: redefined-local
     local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
-    local title_suffix = display_sort .. (reverse_sorting and " ↓" or "")
+    ---@diagnostic disable-next-line: redefined-local
+    local title_suffix = display_sort .. (reverse_sorting and " revserse " or "")
     vim.api.nvim_win_set_config(picker_win, { title = base_title .. " (Sort: " .. title_suffix .. ")" })
     vim.notify(string.format("[Raphael] Reverse sort: %s", reverse_sorting and "ON" or "OFF"))
     log("DEBUG", "Reverse sorting toggled", reverse_sorting)
@@ -1091,7 +1096,7 @@ function M.open(core, opts)
           pcall(M.update_palette, random_theme)
           render(opts)
           highlight_current_line()
-          vim.notify("🎲 Random: " .. random_theme, vim.log.levels.INFO)
+          vim.notify("  Random: " .. random_theme, vim.log.levels.INFO)
         else
           log("ERROR", "Failed to apply random theme", { theme = random_theme, error = err })
         end
@@ -1101,12 +1106,10 @@ function M.open(core, opts)
     end
   end, { buffer = picker_buf, desc = "Apply random theme" })
 
-  -- History viewer
   map("n", "H", function()
     history.show()
   end, { buffer = picker_buf, desc = "Show theme history" })
 
-  -- Jump to history position
   map("n", "J", function()
     vim.ui.input({
       prompt = string.format("Jump to position (1-%d): ", #history.stack),
