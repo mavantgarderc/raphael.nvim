@@ -205,107 +205,6 @@ func (p *Processor) Process(ctx context.Context, data string) (string, error) {
 // FIXME: Handle context cancellation
 ]]
 
-M.cpp = [[
-// Data processor header
-#include <iostream>
-#include <string>
-#include <vector>
-#include <memory>
-
-/**
- * @brief Configuration structure
- */
-struct Config {
-    std::string name;
-    int timeout;
-    bool enabled;
-};
-
-/**
- * @class Processor
- * @brief Main data processor
- */
-class Processor {
-private:
-    Config config_;
-    std::vector<std::string> cache_;
-
-public:
-    /// Constructor
-    explicit Processor(const Config& config) 
-        : config_(config) {}
-    
-    /// Process data with validation
-    /// @deprecated Use processV2() instead
-    std::string process(const std::string& data) {
-        if (data.empty()) {
-            throw std::invalid_argument("Data cannot be empty");
-        }
-        
-        // TODO: Optimize string operations
-        return "Processed: " + data;
-    }
-};
-
-// FIXME: Add move semantics
-]]
-
-M.java = [[
-// Data processing package
-package com.example.processor;
-
-import java.util.*;
-import java.util.concurrent.*;
-
-/**
- * Configuration class
- */
-public class Config {
-    private String name;
-    private int timeout;
-    private boolean enabled;
-    
-    public Config(String name) {
-        this.name = name;
-        this.timeout = 30;
-        this.enabled = true;
-    }
-}
-
-/**
- * Main data processor
- * @author Developer
- * @version 1.0
- */
-public class Processor {
-    private final Config config;
-    private Map<String, Object> cache;
-    
-    public Processor(Config config) {
-        this.config = config;
-        this.cache = new HashMap<>();
-    }
-    
-    /**
-     * Process data asynchronously
-     * @deprecated Use processV2() instead
-     */
-    @Deprecated
-    public CompletableFuture<String> process(String data) {
-        if (data == null || data.isEmpty()) {
-            throw new IllegalArgumentException("Data cannot be empty");
-        }
-        
-        // TODO: Add caching
-        return CompletableFuture.supplyAsync(() -> 
-            String.format("Processed: %s", data)
-        );
-    }
-}
-
-// FIXME: Add exception handling
-]]
-
 M.ruby = [[
 # Data processing module
 require 'json'
@@ -351,61 +250,6 @@ module DataProcessor
 end
 
 # FIXME: Add thread safety
-]]
-
-M.php = [[
-<?php
-// Data processor namespace
-namespace App\Processor;
-
-use Exception;
-use Psr\Log\LoggerInterface;
-
-/**
- * Configuration class
- */
-class Config {
-    private string $name;
-    private int $timeout;
-    private bool $enabled;
-    
-    public function __construct(string $name) {
-        $this->name = $name;
-        $this->timeout = 30;
-        $this->enabled = true;
-    }
-}
-
-/**
- * Main data processor
- */
-class Processor {
-    private Config $config;
-    private array $cache = [];
-    
-    public function __construct(Config $config) {
-        $this->config = $config;
-    }
-    
-    /**
-     * Process data with validation
-     * @deprecated Use processV2() instead
-     */
-    public function process(string $data): ?string {
-        if (empty($data)) {
-            throw new Exception('Data cannot be empty');
-        }
-        
-        // TODO: Add caching
-        $result = sprintf('Processed: %s', $data);
-        $this->cache[$data] = $result;
-        
-        return $result;
-    }
-}
-
-// FIXME: Add type hints
-?>
 ]]
 
 M.sh = [[
@@ -496,112 +340,15 @@ LIMIT 10;
 -- FIXME: Optimize query performance
 ]]
 
-M.html = [[
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sample Page</title>
-    <style>
-        /* Main styles */
-        :root {
-            --primary-color: #3b82f6;
-            --secondary-color: #8b5cf6;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        
-        /* TODO: Add dark mode */
-        .card {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-    </style>
-</head>
-<body>
-    <!-- Main content -->
-    <div class="container">
-        <h1>Welcome</h1>
-        <p>This is a <strong>sample</strong> page.</p>
-    </div>
-</body>
-</html>
-]]
-
-M.json = [[
-{
-  "name": "sample-project",
-  "version": "1.0.0",
-  "description": "Sample configuration",
-  "config": {
-    "enabled": true,
-    "timeout": 30,
-    "retries": 3
-  },
-  "dependencies": {
-    "package-a": "^1.0.0",
-    "package-b": "~2.5.0"
-  },
-  "scripts": {
-    "start": "node index.js",
-    "test": "jest",
-    "build": "webpack"
-  },
-  "author": "Developer",
-  "license": "MIT"
-}
-]]
-
-M.yaml = [[
-# Configuration file
-name: sample-project
-version: 1.0.0
-
-config:
-  enabled: true
-  timeout: 30
-  retries: 3
-
-database:
-  host: localhost
-  port: 5432
-  name: mydb
-  credentials:
-    username: admin
-    password: secret
-
-services:
-  - name: api
-    port: 8080
-    env:
-      NODE_ENV: production
-  - name: worker
-    replicas: 3
-
-# TODO: Add monitoring
-]]
-
 M.languages = {
   { name = "lua", display = "Lua", ft = "lua" },
   { name = "python", display = "Python", ft = "python" },
   { name = "javascript", display = "JavaScript", ft = "javascript" },
   { name = "rust", display = "Rust", ft = "rust" },
   { name = "go", display = "Go", ft = "go" },
-  { name = "cpp", display = "C++", ft = "cpp" },
-  { name = "java", display = "Java", ft = "java" },
   { name = "ruby", display = "Ruby", ft = "ruby" },
-  { name = "php", display = "PHP", ft = "php" },
   { name = "sh", display = "Shell", ft = "sh" },
   { name = "sql", display = "SQL", ft = "sql" },
-  { name = "html", display = "HTML", ft = "html" },
-  { name = "json", display = "JSON", ft = "json" },
-  { name = "yaml", display = "YAML", ft = "yaml" },
 }
 
 function M.get_sample(lang_name)

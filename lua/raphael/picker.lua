@@ -1,5 +1,6 @@
 local themes = require("raphael.themes")
 local history = require("raphael.theme_history")
+local samples = require("raphael.samples")
 local map = vim.keymap.set
 
 local M = {}
@@ -32,6 +33,7 @@ local ICON_GROUP_EXP = "  "
 local ICON_GROUP_COL = "  "
 local BLOCK_CHAR = "  "
 local ICON_SEARCH = "   "
+local ICON_STATS = "  "
 
 local disable_sorting = false
 local reverse_sorting = false
@@ -47,7 +49,42 @@ local PALETTE_HL = {
   "Special",
 }
 
+local help = {
+  "Raphael Picker - Keybindings:",
+  "",
+  "Navigation:",
+  "  `j`/`k`         - Navigate (wraps around)",
+  "  `<C-j>`/`<C-k>` - Jump to next/prev group header (wraps)",
+  "",
+  "Actions:",
+  "  `<CR>`        - Select theme",
+  "  `c`           - Collapse/expand group",
+  "  `s`           - Cycle sort mode",
+  "  `S`           - Toggle sorting on/off",
+  "  `R`           - Toggle reverse sorting (descending)",
+  "  `/`           - Search themes",
+  "  `b`           - Toggle bookmark",
+  "",
+  "History (picker-only):",
+  "  `u`           - Undo theme change",
+  "  `<C-r>`       - Redo theme change",
+  "  `H`           - Show full history",
+  "  `J`           - Jump to history position",
+  "  `T`           - Show quick stats",
+  "  `r`           - Apply random theme",
+  "  `i`           - Show Code Sample",
+  "",
+  "Other:",
+  "  `q`/`<Esc>`     - Quit (revert theme)",
+  "  `?`             - Show this help",
+}
+
 local palette_hl_cache = {}
+
+local code_buf = nil
+local code_win = nil
+local current_lang = nil
+local is_preview_visible = false
 
 local function log(level, msg, data)
   if DEBUG_MODE or level == "ERROR" or level == "WARN" then
@@ -627,20 +664,16 @@ local function close_picker(revert)
     end
   end
 
-  if picker_win and vim.api.nvim_win_is_valid(picker_win) then
-    pcall(vim.api.nvim_win_close, picker_win, true)
-  end
-  if palette_win and vim.api.nvim_win_is_valid(palette_win) then
-    pcall(vim.api.nvim_win_close, palette_win, true)
-  end
-  if search_win and vim.api.nvim_win_is_valid(search_win) then
-    pcall(vim.api.nvim_win_close, search_win, true)
+  for _, win in ipairs({ picker_win, palette_win, search_win, code_win }) do
+    if win and vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_close, win, true)
+    end
   end
 
-  picker_buf, picker_win, palette_buf, palette_win, search_buf, search_win = nil, nil, nil, nil, nil, nil
-  search_query = ""
-  previewed = nil
-  picker_opts = {}
+  picker_buf, picker_win, palette_buf, palette_win, search_buf, search_win, code_buf, code_win =
+    nil, nil, nil, nil, nil, nil, nil, nil
+
+  search_query, previewed, picker_opts = "", nil, {}
 
   log("DEBUG", "Picker closed successfully")
 end
@@ -796,6 +829,95 @@ function M.get_cache_stats()
   }
 end
 
+local function get_current_theme()
+  local line = vim.api.nvim_get_current_line()
+  return parse_line_theme(line)
+end
+
+local function update_preview(opts)
+  opts = opts or {}
+  if not is_preview_visible then
+    return
+  end
+
+  local ok, err = pcall(function()
+    local theme = get_current_theme()
+    if not theme then
+      log("WARN", "No theme found for update_preview")
+      return
+    end
+    local lang_info = samples.get_language_info(current_lang)
+    local sample_code = samples.get_sample(current_lang)
+
+    if not sample_code then
+      ---@diagnostic disable-next-line: param-type-mismatch
+      vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, { "Sample unavailable - fallback to basic text." })
+      return
+    end
+
+    local lines = vim.split(sample_code, "\n")
+    -- lines = vim.list_slice(lines, 1, math.min(20, #lines))
+
+    local header = string.format("[%s] - [%s]", lang_info.display, theme)
+
+    ---@diagnostic disable-next-line: param-type-mismatch
+    vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, vim.list_extend({ header, "" }, lines))
+
+    vim.api.nvim_set_option_value("filetype", lang_info.ft, { buf = code_buf })
+
+    vim.api.nvim_set_option_value("filetype", lang_info.ft, { buf = code_buf })
+    vim.cmd(string.format("syntax on | syntax enable | setlocal syntax=%s", lang_info.ft))
+  end)
+
+  if not ok then
+    log("ERROR", "Failed to update preview", err)
+    ---@diagnostic disable-next-line: param-type-mismatch
+    vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, { "Error loading sample." })
+  end
+end
+
+local function open_preview()
+  if is_preview_visible then
+    return
+  end
+
+  local ok, err = pcall(function()
+    local code_col = picker_col + picker_w + 2
+    local code_width = math.floor(picker_w * core_ref.config.sample_preview.relative_size) * 2
+    local code_height = picker_h
+
+    ---@diagnostic disable-next-line: param-type-mismatch
+    code_win = vim.api.nvim_open_win(code_buf, false, {
+      relative = "editor",
+      width = code_width,
+      height = code_height,
+      row = picker_row,
+      col = code_col,
+      style = "minimal",
+      border = "rounded",
+      zindex = 50,
+    })
+
+    vim.api.nvim_set_current_win(picker_win)
+
+    is_preview_visible = true
+    update_preview()
+  end)
+
+  if not ok then
+    log("ERROR", "Failed to open preview", err)
+  end
+end
+
+local function toggle_and_iterate_preview()
+  if not is_preview_visible then
+    open_preview()
+  else
+    current_lang = samples.get_next_language(current_lang)
+    update_preview()
+  end
+end
+
 function M.open(core, opts)
   opts = opts or {}
   picker_opts = opts
@@ -826,10 +948,10 @@ function M.open(core, opts)
     vim.api.nvim_set_option_value("filetype", "raphael_picker", { buf = picker_buf })
   end
 
-  picker_h = math.max(6, math.floor(vim.o.lines * 0.6))
-  picker_w = math.floor(vim.o.columns * 0.5)
+  picker_h = math.max(6, math.floor(vim.o.lines * 0.7))
+  picker_w = math.floor(vim.o.columns * 0.35)
   picker_row = math.floor((vim.o.lines - picker_h) / 2)
-  picker_col = math.floor((vim.o.columns - picker_w) / 2)
+  picker_col = math.floor(((vim.o.columns - picker_w) / 2) - (picker_w / 2))
 
   local base_title = opts.exclude_configured and "Raphael - Other Themes" or "Raphael - Configured Themes"
 
@@ -912,10 +1034,16 @@ function M.open(core, opts)
   end, { buffer = picker_buf, desc = "Previous group header" })
 
   map("n", "q", function()
+    if code_win and vim.api.nvim_win_is_valid(code_win) then
+      pcall(vim.api.nvim_win_close, code_win, true)
+    end
     close_picker(true)
   end, { buffer = picker_buf, desc = "Quit and revert" })
 
   map("n", "<Esc>", function()
+    if code_win and vim.api.nvim_win_is_valid(code_win) then
+      pcall(vim.api.nvim_win_close, code_win, true)
+    end
     close_picker(true)
   end, { buffer = picker_buf, desc = "Quit and revert" })
 
@@ -947,11 +1075,16 @@ function M.open(core, opts)
       end
     end
 
+    if code_win and vim.api.nvim_win_is_valid(code_win) then
+      pcall(vim.api.nvim_win_close, code_win, true)
+    end
+
     state_ref.current = theme
     state_ref.saved = theme
     if core_ref and core_ref.save_state then
       pcall(core_ref.save_state)
     end
+
     close_picker(false)
   end, { buffer = picker_buf, desc = "Select theme" })
 
@@ -1146,7 +1279,7 @@ function M.open(core, opts)
     end
 
     local lines = {
-      " Theme History:",
+      ICON_STATS .. "Theme History:",
       "",
       string.format("Position: %d/%d", stats.position, stats.total),
       string.format("Unique: %d themes", stats.unique_themes),
@@ -1157,36 +1290,25 @@ function M.open(core, opts)
   end, { buffer = picker_buf, desc = "Show quick stats" })
 
   map("n", "?", function()
-    local help = {
-      "Raphael Picker - Keybindings:",
-      "",
-      "Navigation:",
-      "  `j`/`k`         - Navigate (wraps around)",
-      "  `<C-j>`/`<C-k>` - Jump to next/prev group header (wraps)",
-      "",
-      "Actions:",
-      "  `<CR>`        - Select theme",
-      "  `c`           - Collapse/expand group",
-      "  `s`           - Cycle sort mode",
-      "  `S`           - Toggle sorting on/off",
-      "  `R`           - Toggle reverse sorting (descending)",
-      "  `/`           - Search themes",
-      "  `b`           - Toggle bookmark",
-      "",
-      "History (picker-only):",
-      "  `u`           - Undo theme change",
-      "  `<C-r>`       - Redo theme change",
-      "  `H`           - Show full history",
-      "  `J`           - Jump to history position",
-      "  `T`           - Show quick stats",
-      "  `r`           - Apply random theme",
-      "",
-      "Other:",
-      "  `q`/`<Esc>`     - Quit (revert theme)",
-      "  `?`             - Show this help",
-    }
     vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
   end, { buffer = picker_buf, desc = "Show help" })
+
+  if core_ref.config.sample_preview.enabled then
+    if not code_buf or not vim.api.nvim_buf_is_valid(code_buf) then
+      code_buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = code_buf })
+      vim.api.nvim_set_option_value("buftype", "nofile", { buf = code_buf })
+      vim.api.nvim_set_option_value("swapfile", false, { buf = code_buf })
+    end
+
+    current_lang = core_ref.config.sample_preview.languages[1] or "lua"
+
+    vim.api.nvim_buf_set_keymap(picker_buf, "n", "i", "", {
+      callback = toggle_and_iterate_preview,
+      silent = true,
+      noremap = true,
+    })
+  end
 
   vim.api.nvim_create_autocmd("CursorMoved", {
     buffer = picker_buf,
@@ -1200,6 +1322,7 @@ function M.open(core, opts)
         preview(theme)
       end
       highlight_current_line()
+      update_preview({ debounced = true })
     end,
   })
 
