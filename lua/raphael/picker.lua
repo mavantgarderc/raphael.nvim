@@ -918,6 +918,14 @@ local function toggle_and_iterate_preview()
   end
 end
 
+local function iterate_backward_preview()
+  if not is_preview_visible then
+    return
+  end
+  current_lang = samples.get_previous_language(current_lang)
+  update_preview()
+end
+
 function M.open(core, opts)
   opts = opts or {}
   picker_opts = opts
@@ -1305,6 +1313,12 @@ function M.open(core, opts)
 
     vim.api.nvim_buf_set_keymap(picker_buf, "n", "i", "", {
       callback = toggle_and_iterate_preview,
+      silent = true,
+      noremap = true,
+    })
+
+    vim.api.nvim_buf_set_keymap(picker_buf, "n", "I", "", {
+      callback = iterate_backward_preview,
       silent = true,
       noremap = true,
     })

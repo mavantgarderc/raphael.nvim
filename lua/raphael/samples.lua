@@ -374,4 +374,14 @@ function M.get_next_language(current_lang)
   return M.languages[1].name
 end
 
+function M.get_previous_language(current_lang)
+  for i, lang in ipairs(M.languages) do
+    if lang.name == current_lang then
+      local prev_idx = (i - 2) % #M.languages + 1
+      return M.languages[prev_idx].name
+    end
+  end
+  return M.languages[#M.languages].name
+end
+
 return M
