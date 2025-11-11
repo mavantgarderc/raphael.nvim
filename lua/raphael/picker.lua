@@ -11,8 +11,9 @@ local search_buf, search_win
 
 local picker_w, picker_h, picker_row, picker_col
 
-local core_ref, state_ref
+---@diagnostic disable-next-line: unused-local
 local previewed
+local core_ref, state_ref
 local collapsed = {}
 local bookmarks = {}
 local search_query = ""
@@ -34,10 +35,12 @@ local ICON_GROUP_COL = "  "
 local BLOCK_CHAR = "  "
 local ICON_SEARCH = "   "
 local ICON_STATS = "  "
+local WANR_ICON = " 󰝧 "
 
 local disable_sorting = false
 local reverse_sorting = false
 
+local palette_hl_cache = {}
 local PALETTE_HL = {
   "Normal",
   "Comment",
@@ -72,14 +75,13 @@ local help = {
   "  `J`           - Jump to history position",
   "  `T`           - Show quick stats",
   "  `r`           - Apply random theme",
-  "  `i`           - Show Code Sample",
+  "  `i`           - Show Code Sample, Iteraate languages forward",
+  "  `I`           - Iterate lanuagges backward",
   "",
   "Other:",
   "  `q`/`<Esc>`     - Quit (revert theme)",
   "  `?`             - Show this help",
 }
-
-local palette_hl_cache = {}
 
 local code_buf = nil
 local code_win = nil
@@ -148,7 +150,7 @@ local function parse_line_theme(line)
   if line:match("%(%d+%)%s*$") then
     return nil
   end
-  line = line:gsub("%s* 󰝧 ", "")
+  line = line:gsub("%s* " .. WANR_ICON, "")
   local theme = line:match("([%w_%-]+)%s*$")
   if theme and theme ~= "" then
     local aliases = core_ref.config.theme_aliases or {}
@@ -215,6 +217,7 @@ function M.update_palette(theme)
     return
   end
 
+  ---@diagnostic disable-next-line: unused-local
   previewed = theme
 
   if not picker_win or not vim.api.nvim_win_is_valid(picker_win) or not picker_w then
@@ -245,37 +248,49 @@ function M.update_palette(theme)
   local ns = vim.api.nvim_create_namespace("raphael_palette")
   pcall(vim.api.nvim_buf_clear_namespace, palette_buf, ns, 0, -1)
 
+  if not palette_hl_cache[theme] then
+    palette_hl_cache[theme] = {}
+    for _, hl_name in ipairs(PALETTE_HL) do
+      local hl = get_hl_rgb(hl_name)
+      if hl then
+        palette_hl_cache[theme][hl_name] = hl.fg or hl.bg
+      end
+    end
+    log("DEBUG", "Cached palette for theme", theme)
+  else
+    log("DEBUG", "Using cached palette for theme", theme)
+  end
+
   for i, hl_name in ipairs(PALETTE_HL) do
-    local hl = get_hl_rgb(hl_name)
-    if hl then
-      local color_int = hl.fg or hl.bg
-      if color_int then
-        local gname = ensure_palette_hl(i, color_int)
-        if gname then
-          local search_pos, occurrence = 1, 0
-          while true do
-            local s, e = string.find(bufline, BLOCK_CHAR, search_pos, true)
-            if not s then
-              break
-            end
-            occurrence = occurrence + 1
-            if occurrence == i then
-              pcall(
-                vim.api.nvim_buf_set_extmark,
-                palette_buf,
-                ns,
-                0,
-                s - 1,
-                { end_col = e, hl_group = gname, strict = false }
-              )
-              break
-            end
-            search_pos = e + 1
+    local color_int = palette_hl_cache[theme][hl_name]
+    if color_int then
+      local gname = ensure_palette_hl(i, color_int)
+      if gname then
+        local search_pos, occurrence = 1, 0
+        while true do
+          local s, e = string.find(bufline, BLOCK_CHAR, search_pos, true)
+          if not s then
+            break
           end
+          occurrence = occurrence + 1
+          if occurrence == i then
+            pcall(
+              vim.api.nvim_buf_set_extmark,
+              palette_buf,
+              ns,
+              0,
+              s - 1,
+              { end_col = e, hl_group = gname, strict = false }
+            )
+            break
+          end
+          search_pos = e + 1
         end
       end
     end
   end
+
+  vim.cmd("redraw!")
 
   local pal_row, pal_col, pal_width = math.max(picker_row - 2, 0), picker_col, picker_w
   if palette_win and vim.api.nvim_win_is_valid(palette_win) then
@@ -463,7 +478,7 @@ local function render_internal(opts)
       for i = 1, visible_count do
         local t = bookmark_filtered[i]
         local display = core_ref.config.theme_aliases[t] or t
-        local warning = themes.is_available(t) and "" or " 󰝧 "
+        local warning = themes.is_available(t) and "" or WANR_ICON
         local b = " "
         local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
         table.insert(lines, "  " .. warning .. b .. s .. display)
@@ -488,7 +503,7 @@ local function render_internal(opts)
       for i = 1, visible_count do
         local t = recent_filtered[i]
         local display = core_ref.config.theme_aliases[t] or t
-        local warning = themes.is_available(t) and "" or " 󰝧 "
+        local warning = themes.is_available(t) and "" or WANR_ICON
         local b = bookmarks[t] and ICON_BOOKMARK or " "
         local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
         table.insert(lines, "  " .. warning .. b .. s .. display)
@@ -503,7 +518,7 @@ local function render_internal(opts)
     sort_filtered(flat_filtered)
     for _, t in ipairs(flat_filtered) do
       local display = core_ref.config.theme_aliases[t] or t
-      local warning = themes.is_available(t) and "" or " 󰝧 "
+      local warning = themes.is_available(t) and "" or WANR_ICON
       local b = bookmarks[t] and ICON_BOOKMARK or " "
       local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
       table.insert(lines, string.format("%s%s %s %s", warning, b, s, display))
@@ -525,7 +540,7 @@ local function render_internal(opts)
           for i = 1, visible_count do
             local t = filtered_items[i]
             local display = core_ref.config.theme_aliases[t] or t
-            local warning = themes.is_available(t) and "" or " 󰝧 "
+            local warning = themes.is_available(t) and "" or WANR_ICON
             local b = bookmarks[t] and ICON_BOOKMARK or " "
             local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
             table.insert(lines, string.format("  %s%s %s %s", warning, b, s, display))
@@ -649,20 +664,14 @@ end
 local function close_picker(revert)
   log("DEBUG", "Closing picker", { revert = revert })
 
-  cleanup_timers()
-
   if revert and state_ref and state_ref.previous and themes.is_available(state_ref.previous) then
-    local ok, err = pcall(vim.cmd.colorscheme, state_ref.previous)
+    local ok, err = pcall(core_ref.apply, state_ref.previous, false)
     if not ok then
-      log("ERROR", "Failed to revert colorscheme", err)
-    end
-    if core_ref and core_ref.apply then
-      ok, err = pcall(core_ref.apply, state_ref.previous, false)
-      if not ok then
-        log("ERROR", "Failed to apply reverted theme", err)
-      end
+      log("ERROR", "Failed to apply reverted theme", err)
     end
   end
+
+  cleanup_timers()
 
   for _, win in ipairs({ picker_win, palette_win, search_win, code_win }) do
     if win and vim.api.nvim_win_is_valid(win) then
@@ -673,7 +682,9 @@ local function close_picker(revert)
   picker_buf, picker_win, palette_buf, palette_win, search_buf, search_win, code_buf, code_win =
     nil, nil, nil, nil, nil, nil, nil, nil
 
+  ---@diagnostic disable-next-line: unused-local
   search_query, previewed, picker_opts = "", nil, {}
+  search_query, picker_opts = "", {}
 
   log("DEBUG", "Picker closed successfully")
 end
@@ -682,12 +693,38 @@ local function do_preview(theme)
   if not theme or not themes.is_available(theme) then
     return
   end
-  if previewed == theme then
-    return
-  end
+  ---@diagnostic disable-next-line: unused-local
   previewed = theme
 
-  local ok, err = pcall(vim.cmd.colorscheme, theme)
+  local ok, err = pcall(function()
+    vim.cmd("hi clear")
+    vim.cmd("syntax off")
+    if vim.fn.exists("syntax_on") then
+      vim.cmd("syntax reset")
+    end
+    vim.g.colors_name = nil
+    vim.cmd("colorscheme default")
+
+    local lua_path = vim.api.nvim_get_runtime_file('colors/' .. theme .. '.lua', false)[1]
+    local vim_path = vim.api.nvim_get_runtime_file('colors/' .. theme .. '.vim', false)[1]
+    local path = lua_path or vim_path
+
+    if path then
+      if lua_path then
+        dofile(path)
+      else
+        vim.cmd('source ' .. vim.fn.fnameescape(path))
+      end
+      vim.g.colors_name = theme  -- Ensure set after load
+    else
+      vim.cmd.colorscheme(theme)
+    end
+
+    vim.cmd("syntax on")
+    vim.cmd("doautocmd ColorScheme")
+    palette_hl_cache = {}
+    vim.cmd("redraw!")
+  end)
   if not ok then
     log("ERROR", "Failed to preview theme", { theme = theme, error = err })
     return
@@ -979,6 +1016,9 @@ function M.open(core, opts)
   })
 
   state_ref.previous = vim.g.colors_name
+  if not state_ref.previous then
+    state_ref.previous = state_ref.saved
+  end
   log("DEBUG", "Previous theme saved", state_ref.previous)
 
   map("n", "j", function()
