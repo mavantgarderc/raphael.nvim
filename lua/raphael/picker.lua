@@ -7,6 +7,11 @@ local autocmds = require("raphael.autocmds")
 
 local map = vim.keymap.set
 
+local picker_instances = {
+    configured = false,
+    all = false,
+}
+
 local picker_buf, picker_win
 local palette_buf, palette_win
 local search_buf, search_win
@@ -861,6 +866,17 @@ end
 
 function M.open(core, opts)
   opts = opts or {}
+
+  local picker_type = opts.exclude_configured and "other" or "configured"
+
+  if picker_instances[picker_type] then
+    log("DEBUG", "Picker already open, ignoring", { type = picker_type })
+    return
+  end
+
+  picker_instances[picker_type] = true
+  log("DEBUG", "Picker instance started", { type = picker_type })
+
   picker_opts = opts
   core_ref = core
   state_ref = core.state
@@ -917,70 +933,12 @@ function M.open(core, opts)
   end
   log("DEBUG", "Previous theme saved", state_ref.previous)
 
-  map("n", "j", function()
-    local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
-    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
-    local next_line = cur >= line_count and 1 or cur + 1
-    vim.api.nvim_win_set_cursor(picker_win, { next_line, 0 })
-    highlight_current_line()
-  end, { buffer = picker_buf, desc = "Next line (wrap)" })
-
-  map("n", "k", function()
-    local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
-    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
-    local prev_line = cur <= 1 and line_count or cur - 1
-    vim.api.nvim_win_set_cursor(picker_win, { prev_line, 0 })
-    highlight_current_line()
-  end, { buffer = picker_buf, desc = "Previous line (wrap)" })
-
-  map("n", "<C-j>", function()
-    if #header_lines == 0 then
-      log("DEBUG", "No header lines found")
-      return
-    end
-    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
-    log("DEBUG", "C-j navigation", { current = cur, headers = header_lines })
-    for _, ln in ipairs(header_lines) do
-      if ln > cur then
-        vim.api.nvim_win_set_cursor(picker_win, { ln, 0 })
-        highlight_current_line()
-        log("DEBUG", "Jumped to header", ln)
-        return
-      end
-    end
-    if #header_lines > 0 then
-      vim.api.nvim_win_set_cursor(picker_win, { header_lines[1], 0 })
-      highlight_current_line()
-      log("DEBUG", "Wrapped to first header", header_lines[1])
-    end
-  end, { buffer = picker_buf, desc = "Next group header" })
-
-  map("n", "<C-k>", function()
-    if #header_lines == 0 then
-      log("DEBUG", "No header lines found")
-      return
-    end
-    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
-    log("DEBUG", "C-k navigation", { current = cur, headers = header_lines })
-    for i = #header_lines, 1, -1 do
-      if header_lines[i] < cur then
-        vim.api.nvim_win_set_cursor(picker_win, { header_lines[i], 0 })
-        highlight_current_line()
-        log("DEBUG", "Jumped to header", header_lines[i])
-        return
-      end
-    end
-    if #header_lines > 0 then
-      vim.api.nvim_win_set_cursor(picker_win, { header_lines[#header_lines], 0 })
-      highlight_current_line()
-      log("DEBUG", "Wrapped to last header", header_lines[#header_lines])
-    end
-  end, { buffer = picker_buf, desc = "Previous group header" })
-
   map("n", "q", function()
     if code_win and vim.api.nvim_win_is_valid(code_win) then
       pcall(vim.api.nvim_win_close, code_win, true)
     end
+    picker_instances[picker_type] = false
+    log("DEBUG", "Picker instance ended", { type = picker_type })
     close_picker(true)
   end, { buffer = picker_buf, desc = "Quit and revert" })
 
@@ -988,6 +946,8 @@ function M.open(core, opts)
     if code_win and vim.api.nvim_win_is_valid(code_win) then
       pcall(vim.api.nvim_win_close, code_win, true)
     end
+    picker_instances[picker_type] = false
+    log("DEBUG", "Picker instance ended", { type = picker_type })
     close_picker(true)
   end, { buffer = picker_buf, desc = "Quit and revert" })
 
@@ -1029,9 +989,12 @@ function M.open(core, opts)
       pcall(core_ref.save_state)
     end
 
+    picker_instances[picker_type] = false -- Reset state before closing
+    log("DEBUG", "Picker instance ended", { type = picker_type })
     close_picker(false)
   end, { buffer = picker_buf, desc = "Select theme" })
 
+  -- Rest of your keymaps continue as-is...
   map("n", "c", function()
     local line = vim.api.nvim_get_current_line()
     local hdr = parse_line_header(line)
