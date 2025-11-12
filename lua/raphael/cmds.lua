@@ -42,14 +42,14 @@ function M.setup(core)
     complete = function(ArgLead)
       local candidates = themes.get_all_themes()
 
-local alias_map = core.config.theme_aliases or {}
-    local all_candidates = vim.deepcopy(candidates)
+      local alias_map = core.config.theme_aliases or {}
+      local all_candidates = vim.deepcopy(candidates)
 
-    for alias, real in pairs(alias_map) do
-      if vim.tbl_contains(candidates, real) then
-        table.insert(all_candidates, alias .. " → " .. real)
+      for alias, real in pairs(alias_map) do
+        if vim.tbl_contains(candidates, real) then
+          table.insert(all_candidates, alias .. " → " .. real)
+        end
       end
-    end
 
       if ArgLead and ArgLead ~= "" then
         return vim

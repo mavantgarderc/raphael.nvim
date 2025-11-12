@@ -79,7 +79,9 @@ function M.picker_cursor_autocmd(picker_buf, cbs)
     buffer = picker_buf,
     callback = function()
       local ok, line = pcall(vim.api.nvim_get_current_line)
-      if not ok then return end
+      if not ok then
+        return
+      end
 
       local theme
       if type(parse) == "function" then
@@ -137,7 +139,9 @@ function M.search_textchange_autocmd(search_buf, cbs)
     buffer = search_buf,
     callback = function()
       local ok_lines, lines = pcall(vim.api.nvim_buf_get_lines, search_buf, 0, -1, false)
-      if not ok_lines then return end
+      if not ok_lines then
+        return
+      end
 
       local joined = table.concat(lines, "\n")
       local new_query = joined:gsub("^" .. (ICON_SEARCH or ""), "")
@@ -173,7 +177,9 @@ function M.search_textchange_autocmd(search_buf, cbs)
               local match_count = 0
               while match_count < 10 do
                 local s, e = line:lower():find(query_lower, start_idx, true)
-                if not s then break end
+                if not s then
+                  break
+                end
                 pcall(vim.api.nvim_buf_set_extmark, pbuf, ns, i - 1, s - 1, {
                   end_col = e,
                   hl_group = "Search",

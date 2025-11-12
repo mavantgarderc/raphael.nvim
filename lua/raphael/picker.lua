@@ -24,9 +24,6 @@ local header_lines = {}
 local last_cursor = {}
 local active_timers = {}
 local RENDER_DEBOUNCE_MS = 50
-local ANIM_STEPS = 5
-local ANIM_INTERVAL = 15
-local ENABLE_ANIMATIONS = true
 local DEBUG_MODE = false
 
 local ICON_BOOKMARK = "  "
@@ -461,8 +458,6 @@ local function render_internal(opts)
     end
   end
 
-  state_ref._anim_ratio_group = state_ref._anim_ratio_group or {}
-
   local bookmark_filtered = {}
   for _, t in ipairs(state_ref.bookmarks or {}) do
     if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
@@ -471,12 +466,11 @@ local function render_internal(opts)
   end
   if #bookmark_filtered > 0 then
     local group = "__bookmarks"
-    local ratio = state_ref._anim_ratio_group[group] or 1
     local bookmark_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
     table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
     table.insert(header_lines, #lines)
     if not collapsed[group] then
-      local visible_count = math.max(1, math.floor(#bookmark_filtered * ratio))
+      local visible_count = math.max(1, math.floor(#bookmark_filtered))
       for i = 1, visible_count do
         local t = bookmark_filtered[i]
         local display = core_ref.config.theme_aliases[t] or t
@@ -496,12 +490,11 @@ local function render_internal(opts)
   end
   if #recent_filtered > 0 then
     local group = "__recent"
-    local ratio = state_ref._anim_ratio_group[group] or 1
     local recent_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
     table.insert(lines, recent_icon .. " Recent (" .. #state_ref.history .. ")")
     table.insert(header_lines, #lines)
     if not collapsed[group] then
-      local visible_count = math.max(1, math.floor(#recent_filtered * ratio))
+      local visible_count = math.max(1, math.floor(#recent_filtered))
       for i = 1, visible_count do
         local t = recent_filtered[i]
         local display = core_ref.config.theme_aliases[t] or t
@@ -531,14 +524,13 @@ local function render_internal(opts)
       sort_filtered(filtered_items)
 
       if #filtered_items > 0 then
-        local ratio = state_ref._anim_ratio_group[group] or 1
         local header_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
         local summary = string.format("(%d)", #items)
         table.insert(lines, string.format("%s %s %s", header_icon, group, summary))
         table.insert(header_lines, #lines)
 
         if not collapsed[group] then
-          local visible_count = math.max(1, math.floor(#filtered_items * ratio))
+          local visible_count = math.max(1, math.floor(#filtered_items))
           for i = 1, visible_count do
             local t = filtered_items[i]
             local display = core_ref.config.theme_aliases[t] or t
@@ -579,55 +571,6 @@ local function render(opts)
   render_debounced(opts)
 end
 
-local function animate_steps(group_key, fn)
-  if active_timers[group_key] then
-    local old_timer = active_timers[group_key]
-    if old_timer and not old_timer:is_closing() then
-      pcall(old_timer.stop, old_timer)
-      pcall(old_timer.close, old_timer)
-    end
-    active_timers[group_key] = nil
-  end
-
-  local step = 1
-  ---@diagnostic disable-next-line: undefined-field
-  local timer = vim.loop.new_timer()
-  active_timers[group_key] = timer
-
-  local function cleanup()
-    if timer and not timer:is_closing() then
-      pcall(timer.stop, timer)
-      pcall(timer.close, timer)
-    end
-    active_timers[group_key] = nil
-  end
-
-  timer:start(0, ANIM_INTERVAL, function()
-    vim.schedule(function()
-      if not picker_win or not vim.api.nvim_win_is_valid(picker_win) then
-        cleanup()
-        return
-      end
-
-      local ok, keep_going = pcall(fn, step)
-      if not ok then
-        log("ERROR", "Animation step error", keep_going)
-        cleanup()
-        return
-      end
-
-      if not keep_going or step >= ANIM_STEPS then
-        cleanup()
-      end
-      step = step + 1
-    end)
-  end)
-end
-
-local function ease_out_cubic(t)
-  return 1 - (1 - t) ^ 3
-end
-
 local function toggle_group(group)
   if not group then
     log("WARN", "toggle_group called with nil group")
@@ -635,32 +578,11 @@ local function toggle_group(group)
   end
 
   collapsed[group] = not collapsed[group]
-  state_ref._anim_ratio_group = state_ref._anim_ratio_group or {}
-
-  if not ENABLE_ANIMATIONS or ANIM_STEPS <= 1 then
-    state_ref._anim_ratio_group[group] = 1
-    render()
-    return
-  end
 
   local target_state = collapsed[group]
   log("DEBUG", string.format("Toggling group %s to %s", group, target_state and "collapsed" or "expanded"))
 
-  local step_fn = function(frame)
-    local t = frame / ANIM_STEPS
-    local eased = ease_out_cubic(t)
-
-    if target_state then
-      state_ref._anim_ratio_group[group] = 1 - eased
-    else
-      state_ref._anim_ratio_group[group] = eased
-    end
-
-    render()
-    return frame < ANIM_STEPS
-  end
-
-  animate_steps("toggle_" .. group, step_fn)
+  render()
 end
 
 local function close_picker(revert)
@@ -829,22 +751,6 @@ local function open_search()
   end, { buffer = search_buf })
 end
 
-function M.toggle_animations()
-  ENABLE_ANIMATIONS = not ENABLE_ANIMATIONS
-  vim.notify(string.format("[Raphael] Animations: %s", ENABLE_ANIMATIONS and "ON" or "OFF"))
-end
-
-function M.get_cache_stats()
-  local count = 0
-  for _ in pairs(palette_hl_cache) do
-    count = count + 1
-  end
-  return {
-    palette_cache_size = count,
-    active_timers = vim.tbl_count(active_timers),
-  }
-end
-
 local function update_preview(opts)
   opts = opts or {}
   if not is_preview_visible then
@@ -858,10 +764,13 @@ local function update_preview(opts)
       return
     end
 
+    local hdr = parse_line_header(line)
     local theme = parse_line_theme(line)
     if not theme then
-      log("WARN", "No theme found for update_preview")
-      return
+      if not hdr then
+                log("WARN", "No theme found for update_preview")
+                return
+      end
     end
 
     local lang_info = samples.get_language_info(current_lang)
@@ -870,7 +779,7 @@ local function update_preview(opts)
     if not sample_code then
       ---@diagnostic disable-next-line: param-type-mismatch
       vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, {
-        "Sample unavailable - fallback to basic text."
+        "Sample unavailable - fallback to basic text.",
       })
       return
     end
@@ -1102,8 +1011,8 @@ function M.open(core, opts)
 
     log("DEBUG", "Applying theme", theme)
     if core_ref and core_ref.apply then
-      local ok, err = pcall(core_ref.apply, theme, true)
-      if not ok then
+      local apply_ok, err = pcall(core_ref.apply, theme, true)
+      if not apply_ok then
         log("ERROR", "Failed to apply theme", { theme = theme, error = err })
         vim.notify("Failed to apply theme: " .. theme, vim.log.levels.ERROR)
         return
