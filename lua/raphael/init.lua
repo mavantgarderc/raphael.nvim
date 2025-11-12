@@ -2,6 +2,10 @@ local M = {}
 
 local themes = require("raphael.themes")
 local history = require("raphael.theme_history")
+local autocmds = require("raphael.autocmds")
+local cmds = require("raphael.cmds")
+local keymaps = require("raphael.keymaps")
+local picker = require("raphael.picker")
 
 M.defaults = {
   leader = "<leader>t",
@@ -130,30 +134,11 @@ function M.add_to_history(theme)
     return
   end
 
-  -- remove theme if it already exists in history
-  for i = #M.state.history, 1, -1 do
-    if M.state.history[i] == theme then
-      table.remove(M.state.history, i)
-    end
-  end
-
   table.insert(M.state.history, 1, theme)
 
   while #M.state.history > 10 do
     table.remove(M.state.history)
   end
-end
-
-local function lerp_color(c1, c2, t)
-  local r1, g1, b1 = math.floor(c1 / 0x10000), math.floor(c1 % 0x10000 / 0x100), c1 % 0x100
-  local r2, g2, b2 = math.floor(c2 / 0x10000), math.floor(c2 % 0x10000 / 0x100), c2 % 0x100
-  return math.floor(r1 + t * (r2 - r1)) * 0x10000
-    + math.floor(g1 + t * (g2 - g1)) * 0x100
-    + math.floor(b1 + t * (b2 - b1))
-end
-
-local function get_hl_table()
-  return vim.api.nvim_get_hl(0, {})
 end
 
 function M.apply(theme, from_manual)
@@ -183,13 +168,12 @@ function M.apply(theme, from_manual)
   M.state.usage = M.state.usage or {}
   M.state.usage[theme] = (M.state.usage[theme] or 0) + 1
 
-  -- only push to undo/redo stack if applied manually
   if from_manual then
     history.add(theme)
     M.state.saved = theme
   end
 
-  M.add_to_history(theme) -- for state persistence
+  M.add_to_history(theme)
   M.save_state()
 
   vim.notify("raphael: applied " .. theme)
@@ -218,7 +202,7 @@ function M.toggle_bookmark(theme)
 end
 
 function M.open_picker(opts)
-  require("raphael.picker").open(M, opts)
+  picker.open(M, opts)
 end
 
 function M.refresh_and_reload()
@@ -290,11 +274,11 @@ function M.setup(user_config)
 
   vim.g.raphael_auto_theme = M.state.auto_apply == true
 
-  require("raphael.autocmds").setup(M)
+  autocmds.setup(M)
 
-  require("raphael.commands").setup(M)
+  cmds.setup(M)
 
-  require("raphael.keymaps").setup(M)
+  keymaps.setup(M)
 
   vim.api.nvim_create_autocmd("VimEnter", {
     once = true,

@@ -1,9 +1,11 @@
+local M = {}
+
 local themes = require("raphael.themes")
 local history = require("raphael.theme_history")
 local samples = require("raphael.samples")
-local map = vim.keymap.set
+local autocmds = require("raphael.autocmds")
 
-local M = {}
+local map = vim.keymap.set
 
 local picker_buf, picker_win
 local palette_buf, palette_win
@@ -705,17 +707,17 @@ local function do_preview(theme)
     vim.g.colors_name = nil
     vim.cmd("colorscheme default")
 
-    local lua_path = vim.api.nvim_get_runtime_file('colors/' .. theme .. '.lua', false)[1]
-    local vim_path = vim.api.nvim_get_runtime_file('colors/' .. theme .. '.vim', false)[1]
+    local lua_path = vim.api.nvim_get_runtime_file("colors/" .. theme .. ".lua", false)[1]
+    local vim_path = vim.api.nvim_get_runtime_file("colors/" .. theme .. ".vim", false)[1]
     local path = lua_path or vim_path
 
     if path then
       if lua_path then
         dofile(path)
       else
-        vim.cmd('source ' .. vim.fn.fnameescape(path))
+        vim.cmd("source " .. vim.fn.fnameescape(path))
       end
-      vim.g.colors_name = theme  -- Ensure set after load
+      vim.g.colors_name = theme
     else
       vim.cmd.colorscheme(theme)
     end
@@ -765,37 +767,19 @@ local function open_search()
 
   local ns = vim.api.nvim_create_namespace("raphael_search_match")
 
-  vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
-    buffer = search_buf,
-    callback = function()
-      local lines = vim.api.nvim_buf_get_lines(search_buf, 0, -1, false)
-      search_query = trim(table.concat(lines, "\n"):gsub("^" .. ICON_SEARCH .. " ", ""))
-      render(picker_opts)
-
-      if picker_buf and vim.api.nvim_buf_is_valid(picker_buf) then
-        pcall(vim.api.nvim_buf_clear_namespace, picker_buf, ns, 0, -1)
-        if search_query ~= "" and #search_query >= 2 then
-          local picker_lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
-          local query_lower = search_query:lower()
-          for i, line in ipairs(picker_lines) do
-            local start_idx = 1
-            local match_count = 0
-            while match_count < 10 do
-              local s, e = line:lower():find(query_lower, start_idx, true)
-              if not s then
-                break
-              end
-              pcall(vim.api.nvim_buf_set_extmark, picker_buf, ns, i - 1, s - 1, {
-                end_col = e,
-                hl_group = "Search",
-                strict = false,
-              })
-              start_idx = e + 1
-              match_count = match_count + 1
-            end
-          end
-        end
-      end
+  autocmds.search_textchange_autocmd(search_buf, {
+    trim = trim,
+    ICON_SEARCH = ICON_SEARCH,
+    render = render,
+    get_picker_buf = function()
+      return picker_buf
+    end,
+    get_picker_opts = function()
+      return picker_opts
+    end,
+    ns = ns,
+    set_search_query = function(val)
+      search_query = val
     end,
   })
 
@@ -845,11 +829,6 @@ local function open_search()
   end, { buffer = search_buf })
 end
 
-function M.toggle_debug()
-  DEBUG_MODE = not DEBUG_MODE
-  vim.notify(string.format("[Raphael] Debug mode: %s", DEBUG_MODE and "ON" or "OFF"))
-end
-
 function M.toggle_animations()
   ENABLE_ANIMATIONS = not ENABLE_ANIMATIONS
   vim.notify(string.format("[Raphael] Animations: %s", ENABLE_ANIMATIONS and "ON" or "OFF"))
@@ -864,11 +843,6 @@ function M.get_cache_stats()
     palette_cache_size = count,
     active_timers = vim.tbl_count(active_timers),
   }
-end
-
-local function get_current_theme()
-  local line = vim.api.nvim_get_current_line()
-  return parse_line_theme(line)
 end
 
 local function update_preview(opts)
@@ -961,6 +935,14 @@ local function iterate_backward_preview()
   end
   current_lang = samples.get_previous_language(current_lang)
   update_preview()
+end
+
+function M.get_current_theme()
+  if not picker_win or not vim.api.nvim_win_is_valid(picker_win) then
+    return nil
+  end
+  local line = vim.api.nvim_get_current_line()
+  return parse_line_theme(line)
 end
 
 function M.open(core, opts)
@@ -1364,29 +1346,16 @@ function M.open(core, opts)
     })
   end
 
-  vim.api.nvim_create_autocmd("CursorMoved", {
-    buffer = picker_buf,
-    callback = function()
-      local ok, line = pcall(vim.api.nvim_get_current_line)
-      if not ok then
-        return
-      end
-      local theme = parse_line_theme(line)
-      if theme then
-        preview(theme)
-      end
-      highlight_current_line()
-      update_preview({ debounced = true })
-    end,
+  autocmds.picker_cursor_autocmd(picker_buf, {
+    parse = parse_line_theme,
+    preview = preview,
+    highlight = highlight_current_line,
+    update_preview = update_preview,
   })
 
-  vim.api.nvim_create_autocmd("BufDelete", {
-    buffer = picker_buf,
-    once = true,
-    callback = function()
-      log("DEBUG", "Picker buffer deleted, cleaning up")
-      cleanup_timers()
-    end,
+  autocmds.picker_bufdelete_autocmd(picker_buf, {
+    log = log,
+    cleanup = cleanup_timers,
   })
 
   render(opts)

@@ -1,7 +1,8 @@
 local M = {}
 
-local map = vim.keymap.set
 local themes = require("raphael.themes")
+
+local map = vim.keymap.set
 
 function M.setup(core)
   local leader = core.config.leader
