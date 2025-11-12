@@ -1,14 +1,9 @@
 -- lua/raphael/cmds.lua
 local M = {}
 
-local themes  = require("raphael.themes")
-local picker  = require("raphael.picker")
+local themes = require("raphael.themes")
+local picker = require("raphael.picker")
 local history = require("raphael.theme_history")
-
---- Helper: get the picker instance from the core (core.picker is the table returned by picker.lua)
-local function get_picker(core)
-  return core.picker
-end
 
 --- Setup **all** Raphael user commands
 ---@param core table The main Raphael core instance
@@ -34,14 +29,34 @@ function M.setup(core)
       vim.notify("Raphael: No theme name provided", vim.log.levels.WARN)
       return
     end
+
+    local resolved = core.config.theme_aliases[theme] or theme
+    if not themes.is_available(resolved) then
+      vim.notify(string.format("Raphael: Theme '%s' is not installed or available", resolved), vim.log.levels.WARN)
+      return
+    end
+
     core.apply(theme, true)
   end, {
     nargs = 1,
     complete = function(ArgLead)
       local candidates = themes.get_all_themes()
+
+local alias_map = core.config.theme_aliases or {}
+    local all_candidates = vim.deepcopy(candidates)
+
+    for alias, real in pairs(alias_map) do
+      if vim.tbl_contains(candidates, real) then
+        table.insert(all_candidates, alias .. " → " .. real)
+      end
+    end
+
       if ArgLead and ArgLead ~= "" then
-        return vim.iter(candidates)
-          :filter(function(t) return t:lower():find(ArgLead:lower(), 1, true) end)
+        return vim
+          .iter(candidates)
+          :filter(function(t)
+            return t:lower():find(ArgLead:lower(), 1, true)
+          end)
           :totable()
       end
       return candidates
@@ -71,11 +86,14 @@ function M.setup(core)
 
   vim.api.nvim_create_user_command("RaphaelCacheStats", function()
     local stats = picker.get_cache_stats()
-    vim.notify(string.format(
-      "Raphael Cache: %d palette entries | %d active timers",
-      stats.palette_cache_size,
-      stats.active_timers
-    ), vim.log.levels.INFO)
+    vim.notify(
+      string.format(
+        "Raphael Cache: %d palette entries | %d active timers",
+        stats.palette_cache_size,
+        stats.active_timers
+      ),
+      vim.log.levels.INFO
+    )
   end, { desc = "Show picker palette-cache stats" })
 
   vim.api.nvim_create_user_command("RaphaelHistory", function()

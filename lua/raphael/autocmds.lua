@@ -2,9 +2,19 @@ local themes = require("raphael.themes")
 
 local M = {}
 
+local function guard_state(fn)
+  return function(...)
+    local core = ...
+    if not core or not core.state then
+      return
+    end
+    return fn(...)
+  end
+end
+
 function M.setup(core)
   vim.api.nvim_create_autocmd("BufEnter", {
-    callback = function()
+    callback = guard_state(function(core)
       if not core.state.auto_apply then
         return
       end
@@ -15,7 +25,7 @@ function M.setup(core)
       else
         core.apply(core.config.default_theme, false)
       end
-    end,
+    end),
   })
 
   vim.api.nvim_create_autocmd("LspAttach", {
@@ -24,6 +34,34 @@ function M.setup(core)
       vim.api.nvim_set_hl(0, "LspReferenceRead", { link = "CursorLine" })
       vim.api.nvim_set_hl(0, "LspReferenceWrite", { link = "Visual" })
     end,
+  })
+
+  vim.api.nvim_create_autocmd("FileType", {
+    callback = guard_state(function(core, args)
+      if not core.state.auto_apply then
+        return
+      end
+
+      local ft = args.match
+      local theme_ft = themes.filetype_themes[ft]
+
+      if theme_ft and themes.is_available(theme_ft) then
+        core.apply(theme_ft, false)
+      else
+        if theme_ft and not themes.is_available(theme_ft) then
+          vim.notify(
+            string.format("raphael: filetype theme '%s' for %s not available, using default", theme_ft, ft),
+            vim.log.levels.WARN
+          )
+          if themes.is_available(core.config.default_theme) then
+            core.apply(core.config.default_theme, false)
+          end
+        end
+      end
+
+      ---@diagnostic disable-next-line: lowercase-global
+      first_ft_fired = true
+    end),
   })
 end
 
@@ -41,9 +79,8 @@ function M.picker_cursor_autocmd(picker_buf, cbs)
     buffer = picker_buf,
     callback = function()
       local ok, line = pcall(vim.api.nvim_get_current_line)
-      if not ok then
-        return
-      end
+      if not ok then return end
+
       local theme
       if type(parse) == "function" then
         theme = parse(line)
@@ -100,9 +137,7 @@ function M.search_textchange_autocmd(search_buf, cbs)
     buffer = search_buf,
     callback = function()
       local ok_lines, lines = pcall(vim.api.nvim_buf_get_lines, search_buf, 0, -1, false)
-      if not ok_lines then
-        return
-      end
+      if not ok_lines then return end
 
       local joined = table.concat(lines, "\n")
       local new_query = joined:gsub("^" .. (ICON_SEARCH or ""), "")
@@ -138,9 +173,7 @@ function M.search_textchange_autocmd(search_buf, cbs)
               local match_count = 0
               while match_count < 10 do
                 local s, e = line:lower():find(query_lower, start_idx, true)
-                if not s then
-                  break
-                end
+                if not s then break end
                 pcall(vim.api.nvim_buf_set_extmark, pbuf, ns, i - 1, s - 1, {
                   end_col = e,
                   hl_group = "Search",

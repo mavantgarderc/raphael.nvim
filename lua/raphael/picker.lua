@@ -851,36 +851,41 @@ local function update_preview(opts)
     return
   end
 
-  local ok, err = pcall(function()
-    local theme = get_current_theme()
+  local update_ok, err = pcall(function()
+    local ok, line = pcall(vim.api.nvim_get_current_line)
+    if not ok or not line or line == "" then
+      log("WARN", "No line under cursor for preview")
+      return
+    end
+
+    local theme = parse_line_theme(line)
     if not theme then
       log("WARN", "No theme found for update_preview")
       return
     end
+
     local lang_info = samples.get_language_info(current_lang)
     local sample_code = samples.get_sample(current_lang)
 
     if not sample_code then
       ---@diagnostic disable-next-line: param-type-mismatch
-      vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, { "Sample unavailable - fallback to basic text." })
+      vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, {
+        "Sample unavailable - fallback to basic text."
+      })
       return
     end
 
     local lines = vim.split(sample_code, "\n")
-    -- lines = vim.list_slice(lines, 1, math.min(20, #lines))
-
     local header = string.format("[%s] - [%s]", lang_info.display, theme)
 
     ---@diagnostic disable-next-line: param-type-mismatch
     vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, vim.list_extend({ header, "" }, lines))
-
     vim.api.nvim_set_option_value("filetype", lang_info.ft, { buf = code_buf })
 
-    vim.api.nvim_set_option_value("filetype", lang_info.ft, { buf = code_buf })
-    vim.cmd(string.format("syntax on | syntax enable | setlocal syntax=%s", lang_info.ft))
+    vim.cmd(string.format("silent! syntax on | syntax enable | setlocal syntax=%s", lang_info.ft))
   end)
 
-  if not ok then
+  if not update_ok then
     log("ERROR", "Failed to update preview", err)
     ---@diagnostic disable-next-line: param-type-mismatch
     vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, { "Error loading sample." })
