@@ -398,6 +398,10 @@ local function render_internal(opts)
   local lines = {}
   header_lines = {}
 
+  local config = core_ref.config
+  local show_bookmarks = config.bookmark_group ~= false
+  local show_recent    = config.recent_group ~= false
+
   local display_map = vim.deepcopy(themes.theme_map)
   if exclude_configured then
     local all_installed = vim.tbl_keys(themes.installed)
@@ -413,36 +417,25 @@ local function render_internal(opts)
   end
 
   local is_display_grouped = not vim.islist(display_map)
-  local sort_mode = state_ref.sort_mode or core_ref.config.sort_mode or "alpha"
+  local sort_mode = state_ref.sort_mode or config.sort_mode or "alpha"
 
   local function sort_filtered(filtered)
-    if disable_sorting then
-      return
-    end
+    if disable_sorting then return end
 
     local function cmp_alpha(a, b)
-      if reverse_sorting then
-        return a:lower() > b:lower()
-      end
-      return a:lower() < b:lower()
+      return reverse_sorting and a:lower() > b:lower() or a:lower() < b:lower()
     end
 
     local function cmp_recent(a, b)
       local idx_a = vim.fn.index(state_ref.history or {}, a) or -1
       local idx_b = vim.fn.index(state_ref.history or {}, b) or -1
-      if reverse_sorting then
-        return idx_a < idx_b
-      end
-      return idx_a > idx_b
+      return reverse_sorting and idx_a < idx_b or idx_a > idx_b
     end
 
     local function cmp_usage(a, b)
       local count_a = (state_ref.usage or {})[a] or 0
       local count_b = (state_ref.usage or {})[b] or 0
-      if reverse_sorting then
-        return count_a < count_b
-      end
-      return count_a > count_b
+      return reverse_sorting and count_a < count_b or count_a > count_b
     end
 
     if sort_mode == "alpha" then
@@ -453,7 +446,7 @@ local function render_internal(opts)
       table.sort(filtered, cmp_usage)
     end
 
-    local custom_sorts = core_ref.config.custom_sorts or {}
+    local custom_sorts = config.custom_sorts or {}
     local custom_func = custom_sorts[sort_mode]
     if custom_func then
       table.sort(filtered, custom_func)
@@ -465,50 +458,56 @@ local function render_internal(opts)
     end
   end
 
-  local bookmark_filtered = {}
-  for _, t in ipairs(state_ref.bookmarks or {}) do
-    if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
-      table.insert(bookmark_filtered, t)
+  if show_bookmarks then
+    local bookmark_filtered = {}
+    for _, t in ipairs(state_ref.bookmarks or {}) do
+      if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
+        table.insert(bookmark_filtered, t)
+      end
     end
-  end
-  if #bookmark_filtered > 0 then
-    local group = "__bookmarks"
-    local bookmark_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
-    table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
-    table.insert(header_lines, #lines)
-    if not collapsed[group] then
-      local visible_count = math.max(1, math.floor(#bookmark_filtered))
-      for i = 1, visible_count do
-        local t = bookmark_filtered[i]
-        local display = core_ref.config.theme_aliases[t] or t
-        local warning = themes.is_available(t) and "" or WANR_ICON
-        local b = " "
-        local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
-        table.insert(lines, "  " .. warning .. b .. s .. display)
+
+    if #bookmark_filtered > 0 then
+      local group = "__bookmarks"
+      local bookmark_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
+      table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state_ref.bookmarks .. ")")
+      table.insert(header_lines, #lines)
+      if not collapsed[group] then
+        local visible_count = math.max(1, math.floor(#bookmark_filtered))
+        for i = 1, visible_count do
+          local t = bookmark_filtered[i]
+          local display = config.theme_aliases[t] or t
+          local warning = themes.is_available(t) and "" or WANR_ICON
+          local b = " "
+          local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+          table.insert(lines, "  " .. warning .. b .. s .. display)
+        end
       end
     end
   end
 
-  local recent_filtered = {}
-  for _, t in ipairs(state_ref.history or {}) do
-    if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
-      table.insert(recent_filtered, t)
+  if show_recent then
+    local recent_filtered = {}
+    for _, t in ipairs(state_ref.history or {}) do
+      if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
+        table.insert(recent_filtered, t)
+      end
     end
-  end
-  if #recent_filtered > 0 then
-    local group = "__recent"
-    local recent_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
-    table.insert(lines, recent_icon .. " Recent (" .. #state_ref.history .. ")")
-    table.insert(header_lines, #lines)
-    if not collapsed[group] then
-      local visible_count = math.max(1, math.floor(#recent_filtered))
-      for i = 1, visible_count do
-        local t = recent_filtered[i]
-        local display = core_ref.config.theme_aliases[t] or t
-        local warning = themes.is_available(t) and "" or WANR_ICON
-        local b = bookmarks[t] and ICON_BOOKMARK or " "
-        local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
-        table.insert(lines, "  " .. warning .. b .. s .. display)
+
+    if #recent_filtered > 0 then
+      local group = "__recent"
+      local recent_icon = collapsed[group] and ICON_GROUP_COL or ICON_GROUP_EXP
+      table.insert(lines, recent_icon .. " Recent (" .. #state_ref.history .. ")")
+      table.insert(header_lines, #lines)
+      if not collapsed[group] then
+        local visible_count = math.max(1, math.floor(#recent_filtered))
+        for i = 1, visible_count do
+          local t = recent_filtered[i]
+          local display = config.theme_aliases[t] or t
+          local warning = themes.is_available(t) and "" or WANR_ICON
+          local b = bookmarks[t] and ICON_BOOKMARK or " "
+          local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
+          table.insert(lines, "  " .. warning .. b .. s .. display)
+        end
       end
     end
   end
@@ -519,7 +518,7 @@ local function render_internal(opts)
       or vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
     sort_filtered(flat_filtered)
     for _, t in ipairs(flat_filtered) do
-      local display = core_ref.config.theme_aliases[t] or t
+      local display = config.theme_aliases[t] or t
       local warning = themes.is_available(t) and "" or WANR_ICON
       local b = bookmarks[t] and ICON_BOOKMARK or " "
       local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
@@ -540,7 +539,7 @@ local function render_internal(opts)
           local visible_count = math.max(1, math.floor(#filtered_items))
           for i = 1, visible_count do
             local t = filtered_items[i]
-            local display = core_ref.config.theme_aliases[t] or t
+            local display = config.theme_aliases[t] or t
             local warning = themes.is_available(t) and "" or WANR_ICON
             local b = bookmarks[t] and ICON_BOOKMARK or " "
             local s = (state_ref.current == t) and ICON_CURRENT_ON or ICON_CURRENT_OFF
@@ -1286,32 +1285,31 @@ map("n", "gb", function()
     end
   end, { buffer = picker_buf, desc = "Redo theme change" })
 
-  -- === [b / ]b : Jump to next/prev BOOKMARK (skip Bookmarks section) ===
   map("n", "]b", function()
+    if not next(bookmarks) then return end
     local lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
     local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
-    local in_bookmarks = false
-    local start_bookmarks = 0
-    local end_bookmarks = 0
-
-    -- Find Bookmarks section bounds
-    for i, line in ipairs(lines) do
-      if parse_line_header(line) == "Bookmarks" then
-        start_bookmarks = i
-      elseif start_bookmarks > 0 and parse_line_header(line) then
-        end_bookmarks = i - 1
-        break
+    local skip_start, skip_end = 0, 0
+    if core_ref.config.bookmark_group ~= false then
+      for _, ln in ipairs(header_lines) do
+        if (lines[ln] or ""):find("Bookmarks") then
+          skip_start = ln
+          for _, next_ln in ipairs(header_lines) do
+            if next_ln > ln then
+              skip_end = next_ln - 1
+              break
+            end
+          end
+          if skip_end == 0 then skip_end = #lines end
+          break
+        end
       end
     end
-    if end_bookmarks == 0 and start_bookmarks > 0 then
-      end_bookmarks = #lines
+    local function is_in_skip(i)
+      return i >= skip_start and i <= skip_end
     end
-
-    -- Search forward, skipping Bookmarks section
     for i = cur + 1, #lines do
-      if i >= start_bookmarks and i <= end_bookmarks then
-        i = end_bookmarks + 1
-      end
+      if is_in_skip(i) then i = skip_end + 1 end
       local theme = parse_line_theme(lines[i])
       if theme and bookmarks[theme] then
         vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
@@ -1319,12 +1317,8 @@ map("n", "gb", function()
         return
       end
     end
-
-    -- Wrap to top, skip Bookmarks
     for i = 1, cur - 1 do
-      if i >= start_bookmarks and i <= end_bookmarks then
-        goto continue
-      end
+      if is_in_skip(i) then goto continue end
       local theme = parse_line_theme(lines[i])
       if theme and bookmarks[theme] then
         vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
@@ -1333,33 +1327,33 @@ map("n", "gb", function()
       end
       ::continue::
     end
-  end, { buffer = picker_buf, desc = "Next bookmark (skip Bookmarks group)" })
+  end, { buffer = picker_buf, desc = "Next bookmark (skip group)" })
 
   map("n", "[b", function()
+    if not next(bookmarks) then return end
     local lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
     local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
-    local in_bookmarks = false
-    local start_bookmarks = 0
-    local end_bookmarks = 0
-
-    -- Find Bookmarks section bounds
-    for i, line in ipairs(lines) do
-      if parse_line_header(line) == "Bookmarks" then
-        start_bookmarks = i
-      elseif start_bookmarks > 0 and parse_line_header(line) then
-        end_bookmarks = i - 1
-        break
+    local skip_start, skip_end = 0, 0
+    if core_ref.config.bookmark_group ~= false then
+      for _, ln in ipairs(header_lines) do
+        if (lines[ln] or ""):find("Bookmarks") then
+          skip_start = ln
+          for _, next_ln in ipairs(header_lines) do
+            if next_ln > ln then
+              skip_end = next_ln - 1
+              break
+            end
+          end
+          if skip_end == 0 then skip_end = #lines end
+          break
+        end
       end
     end
-    if end_bookmarks == 0 and start_bookmarks > 0 then
-      end_bookmarks = #lines
+    local function is_in_skip(i)
+      return i >= skip_start and i <= skip_end
     end
-
-    -- Search backward, skipping Bookmarks section
     for i = cur - 1, 1, -1 do
-      if i >= start_bookmarks and i <= end_bookmarks then
-        i = start_bookmarks - 1
-      end
+      if is_in_skip(i) then i = skip_start - 1 end
       local theme = parse_line_theme(lines[i])
       if theme and bookmarks[theme] then
         vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
@@ -1367,12 +1361,8 @@ map("n", "gb", function()
         return
       end
     end
-
-    -- Wrap to bottom, skip Bookmarks
     for i = #lines, cur + 1, -1 do
-      if i >= start_bookmarks and i <= end_bookmarks then
-        goto continue
-      end
+      if is_in_skip(i) then goto continue end
       local theme = parse_line_theme(lines[i])
       if theme and bookmarks[theme] then
         vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
@@ -1381,9 +1371,114 @@ map("n", "gb", function()
       end
       ::continue::
     end
-  end, { buffer = picker_buf, desc = "Prev bookmark (skip Bookmarks group)" })
+  end, { buffer = picker_buf, desc = "Prev bookmark (skip group)" })
 
-  -- === ]g / [g : Next / Previous GROUP HEADER ===
+  -- === [r / ]r : Next/Prev RECENT (skip Recent group if shown) ===
+  map("n", "]r", function()
+    if not (state_ref.history and #state_ref.history > 0) then return end
+    local lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+
+    local skip_start, skip_end = 0, 0
+    if core_ref.config.recent_group ~= false then
+      for _, ln in ipairs(header_lines) do
+        if (lines[ln] or ""):find("Recent") then
+          skip_start = ln
+          -- Find next header
+          for _, next_ln in ipairs(header_lines) do
+            if next_ln > ln then
+              skip_end = next_ln - 1
+              break
+            end
+          end
+          if skip_end == 0 then skip_end = #lines end
+          break
+        end
+      end
+    end
+
+    local function is_in_skip(i)
+      return i >= skip_start and i <= skip_end
+    end
+
+    -- Forward search
+    for i = cur + 1, #lines do
+      if is_in_skip(i) then
+        i = skip_end + 1
+      end
+      local theme = parse_line_theme(lines[i])
+      if theme and vim.tbl_contains(state_ref.history, theme) then
+        vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
+        highlight_current_line()
+        return
+      end
+    end
+
+    -- Wrap to top
+    for i = 1, cur - 1 do
+      if is_in_skip(i) then goto continue end
+      local theme = parse_line_theme(lines[i])
+      if theme and vim.tbl_contains(state_ref.history, theme) then
+        vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
+        highlight_current_line()
+        return
+      end
+      ::continue::
+    end
+  end, { buffer = picker_buf, desc = "Next recent (skip group)" })
+
+  map("n", "[r", function()
+    if not (state_ref.history and #state_ref.history > 0) then return end
+    local lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+
+    local skip_start, skip_end = 0, 0
+    if core_ref.config.recent_group ~= false then
+      for _, ln in ipairs(header_lines) do
+        if (lines[ln] or ""):find("Recent") then
+          skip_start = ln
+          for _, next_ln in ipairs(header_lines) do
+            if next_ln > ln then
+              skip_end = next_ln - 1
+              break
+            end
+          end
+          if skip_end == 0 then skip_end = #lines end
+          break
+        end
+      end
+    end
+
+    local function is_in_skip(i)
+      return i >= skip_start and i <= skip_end
+    end
+
+    -- Backward search
+    for i = cur - 1, 1, -1 do
+      if is_in_skip(i) then
+        i = skip_start - 1
+      end
+      local theme = parse_line_theme(lines[i])
+      if theme and vim.tbl_contains(state_ref.history, theme) then
+        vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
+        highlight_current_line()
+        return
+      end
+    end
+
+    -- Wrap to bottom
+    for i = #lines, cur + 1, -1 do
+      if is_in_skip(i) then goto continue end
+      local theme = parse_line_theme(lines[i])
+      if theme and vim.tbl_contains(state_ref.history, theme) then
+        vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
+        highlight_current_line()
+        return
+      end
+      ::continue::
+    end
+  end, { buffer = picker_buf, desc = "Prev recent (skip group)" })
+
   map("n", "]g", function()
     local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
     for _, ln in ipairs(header_lines) do
@@ -1414,7 +1509,6 @@ map("n", "gb", function()
     end
   end, { buffer = picker_buf, desc = "Previous group" })
 
-  -- === ]t / [t : Next / Previous THEME (any line) ===
   map("n", "]t", function()
     local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
     local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
