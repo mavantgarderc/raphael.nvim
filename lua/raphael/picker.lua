@@ -62,6 +62,8 @@ local help = {
   "Navigation:",
   "  `j`/`k`         - Navigate (wraps around)",
   "  `<C-j>`/`<C-k>` - Jump to next/prev group header (wraps)",
+  "  `[g`/`]g`       - Jump to prev/next group header (wraps)",
+  "  `[b`/`]b`       - Jumpt to prev/next bookmark",
   "",
   "Actions:",
   "  `<CR>`        - Select theme",
@@ -1283,6 +1285,151 @@ map("n", "gb", function()
       highlight_current_line()
     end
   end, { buffer = picker_buf, desc = "Redo theme change" })
+
+  -- === [b / ]b : Jump to next/prev BOOKMARK (skip Bookmarks section) ===
+  map("n", "]b", function()
+    local lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    local in_bookmarks = false
+    local start_bookmarks = 0
+    local end_bookmarks = 0
+
+    -- Find Bookmarks section bounds
+    for i, line in ipairs(lines) do
+      if parse_line_header(line) == "Bookmarks" then
+        start_bookmarks = i
+      elseif start_bookmarks > 0 and parse_line_header(line) then
+        end_bookmarks = i - 1
+        break
+      end
+    end
+    if end_bookmarks == 0 and start_bookmarks > 0 then
+      end_bookmarks = #lines
+    end
+
+    -- Search forward, skipping Bookmarks section
+    for i = cur + 1, #lines do
+      if i >= start_bookmarks and i <= end_bookmarks then
+        i = end_bookmarks + 1
+      end
+      local theme = parse_line_theme(lines[i])
+      if theme and bookmarks[theme] then
+        vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
+        highlight_current_line()
+        return
+      end
+    end
+
+    -- Wrap to top, skip Bookmarks
+    for i = 1, cur - 1 do
+      if i >= start_bookmarks and i <= end_bookmarks then
+        goto continue
+      end
+      local theme = parse_line_theme(lines[i])
+      if theme and bookmarks[theme] then
+        vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
+        highlight_current_line()
+        return
+      end
+      ::continue::
+    end
+  end, { buffer = picker_buf, desc = "Next bookmark (skip Bookmarks group)" })
+
+  map("n", "[b", function()
+    local lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    local in_bookmarks = false
+    local start_bookmarks = 0
+    local end_bookmarks = 0
+
+    -- Find Bookmarks section bounds
+    for i, line in ipairs(lines) do
+      if parse_line_header(line) == "Bookmarks" then
+        start_bookmarks = i
+      elseif start_bookmarks > 0 and parse_line_header(line) then
+        end_bookmarks = i - 1
+        break
+      end
+    end
+    if end_bookmarks == 0 and start_bookmarks > 0 then
+      end_bookmarks = #lines
+    end
+
+    -- Search backward, skipping Bookmarks section
+    for i = cur - 1, 1, -1 do
+      if i >= start_bookmarks and i <= end_bookmarks then
+        i = start_bookmarks - 1
+      end
+      local theme = parse_line_theme(lines[i])
+      if theme and bookmarks[theme] then
+        vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
+        highlight_current_line()
+        return
+      end
+    end
+
+    -- Wrap to bottom, skip Bookmarks
+    for i = #lines, cur + 1, -1 do
+      if i >= start_bookmarks and i <= end_bookmarks then
+        goto continue
+      end
+      local theme = parse_line_theme(lines[i])
+      if theme and bookmarks[theme] then
+        vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
+        highlight_current_line()
+        return
+      end
+      ::continue::
+    end
+  end, { buffer = picker_buf, desc = "Prev bookmark (skip Bookmarks group)" })
+
+  -- === ]g / [g : Next / Previous GROUP HEADER ===
+  map("n", "]g", function()
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    for _, ln in ipairs(header_lines) do
+      if ln > cur then
+        vim.api.nvim_win_set_cursor(picker_win, { ln, 0 })
+        highlight_current_line()
+        return
+      end
+    end
+    if #header_lines > 0 then
+      vim.api.nvim_win_set_cursor(picker_win, { header_lines[1], 0 })
+      highlight_current_line()
+    end
+  end, { buffer = picker_buf, desc = "Next group" })
+
+  map("n", "[g", function()
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    for i = #header_lines, 1, -1 do
+      if header_lines[i] < cur then
+        vim.api.nvim_win_set_cursor(picker_win, { header_lines[i], 0 })
+        highlight_current_line()
+        return
+      end
+    end
+    if #header_lines > 0 then
+      vim.api.nvim_win_set_cursor(picker_win, { header_lines[#header_lines], 0 })
+      highlight_current_line()
+    end
+  end, { buffer = picker_buf, desc = "Previous group" })
+
+  -- === ]t / [t : Next / Previous THEME (any line) ===
+  map("n", "]t", function()
+    local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    local next_line = cur >= line_count and 1 or cur + 1
+    vim.api.nvim_win_set_cursor(picker_win, { next_line, 0 })
+    highlight_current_line()
+  end, { buffer = picker_buf, desc = "Next theme" })
+
+  map("n", "[t", function()
+    local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    local prev_line = cur <= 1 and line_count or cur - 1
+    vim.api.nvim_win_set_cursor(picker_win, { prev_line, 0 })
+    highlight_current_line()
+  end, { buffer = picker_buf, desc = "Previous theme" })
 
   map("n", "r", function()
     local all_themes = themes.get_all_themes()
