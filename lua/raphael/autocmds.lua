@@ -4,26 +4,27 @@ local M = {}
 
 local function guard_state(fn)
   return function(...)
-    local core = ...
+    local core = select(1, ...)
     if not core or not core.state then
       return
     end
-    return fn(...)
+    return fn(core, select(2, ...))
   end
 end
 
-function M.setup(core)
+---@diagnostic disable-next-line: unused-local
+function M.setup(core) -- luacheck: ignore
   vim.api.nvim_create_autocmd("BufEnter", {
-    callback = guard_state(function(core)
-      if not core.state.auto_apply then
+    callback = guard_state(function(inner_core)
+      if not inner_core.state.auto_apply then
         return
       end
       local ft = vim.bo.filetype
       local theme = themes.filetype_themes[ft]
       if theme and themes.is_available(theme) then
-        core.apply(theme, false)
+        inner_core.apply(theme, false)
       else
-        core.apply(core.config.default_theme, false)
+        inner_core.apply(inner_core.config.default_theme, false)
       end
     end),
   })
@@ -37,8 +38,8 @@ function M.setup(core)
   })
 
   vim.api.nvim_create_autocmd("FileType", {
-    callback = guard_state(function(core, args)
-      if not core.state.auto_apply then
+    callback = guard_state(function(inner_core, args)
+      if not inner_core.state.auto_apply then
         return
       end
 
@@ -46,21 +47,16 @@ function M.setup(core)
       local theme_ft = themes.filetype_themes[ft]
 
       if theme_ft and themes.is_available(theme_ft) then
-        core.apply(theme_ft, false)
-      else
-        if theme_ft and not themes.is_available(theme_ft) then
-          vim.notify(
-            string.format("raphael: filetype theme '%s' for %s not available, using default", theme_ft, ft),
-            vim.log.levels.WARN
-          )
-          if themes.is_available(core.config.default_theme) then
-            core.apply(core.config.default_theme, false)
-          end
+        inner_core.apply(theme_ft, false)
+      elseif theme_ft and not themes.is_available(theme_ft) then
+        vim.notify(
+          string.format("raphael: filetype theme '%s' for %s not available, using default", theme_ft, ft),
+          vim.log.levels.WARN
+        )
+        if themes.is_available(inner_core.config.default_theme) then
+          inner_core.apply(inner_core.config.default_theme, false)
         end
       end
-
-      ---@diagnostic disable-next-line: lowercase-global
-      first_ft_fired = true
     end),
   })
 end

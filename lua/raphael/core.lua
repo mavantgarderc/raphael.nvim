@@ -1,9 +1,9 @@
 local M = {}
+
 local themes = require("raphael.themes")
 local state_mod = require("raphael.state")
 local history = require("raphael.theme_history")
 
--- Global state (set in setup)
 M.state = nil
 M.config = nil
 M.manual_apply = false
@@ -19,16 +19,16 @@ function M.setup(config)
 
   M.state = state_mod.load(config)
 
-  vim.g.raphael_auto_theme = M.state.auto_apply == true
+  vim.api.nvim_set_var("raphael_auto_theme", M.state.auto_apply == true)
 
-  -- Startup theme logic (scheduled for after init)
   vim.schedule(function()
     if vim.g.raphael_session_theme then
       M.restore_from_session()
       return
     end
 
-    local startup_theme = nil
+    -- luacheck: ignore startup_theme
+    local startup_theme
 
     if M.state.auto_apply and vim.fn.argc() > 0 then
       ---@diagnostic disable-next-line: param-type-mismatch
@@ -36,7 +36,7 @@ function M.setup(config)
       if first_buf ~= -1 then
         local ft = vim.api.nvim_get_option_value("filetype", { buf = first_buf })
         if ft and ft ~= "" and themes.filetype_themes[ft] then
-          return -- FileType autocmd will handle
+          return
         end
       end
     end
@@ -58,7 +58,6 @@ function M.setup(config)
     end
   end)
 
-  -- Refresh and validation (as in original VimEnter)
   vim.api.nvim_create_autocmd("VimEnter", {
     once = true,
     callback = function()
@@ -103,7 +102,6 @@ function M.setup(config)
     end,
   })
 
-  -- Session restore
   vim.api.nvim_create_autocmd("SessionLoadPost", {
     callback = function()
       M.restore_from_session()
@@ -148,7 +146,6 @@ function M.apply(theme, from_manual)
 
   vim.notify("raphael: applied " .. theme)
 
-  -- Extensibility hook
   if M.config.on_apply then
     M.config.on_apply(theme)
   end
@@ -167,7 +164,7 @@ end
 
 function M.toggle_auto()
   M.state.auto_apply = not M.state.auto_apply
-  vim.g.raphael_auto_theme = M.state.auto_apply
+  vim.api.nvim_set_var("raphael_auto_theme", M.state.auto_apply)
   state_mod.save(M.state, M.config)
   vim.notify(M.state.auto_apply and "raphael auto-theme: ON" or "raphael auto-theme: OFF")
 end

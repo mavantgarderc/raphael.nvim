@@ -22,10 +22,10 @@ function MyClass:process(data)
   if not data then
     error("Data cannot be nil")
   end
-  
+
   self.count = self.count + 1
   local result = string.format("Processed: %s", data)
-  
+
   -- TODO: Add validation
   return result
 end
@@ -56,20 +56,20 @@ class DataProcessor:
     def __init__(self, config: Config):
         self.config = config
         self._cache: Dict[str, any] = {}
-    
+
     async def process(self, items: List[str]) -> Optional[List]:
         """Process items asynchronously"""
         if not items:
             raise ValueError("Items cannot be empty")
-        
+
         results = []
         for item in items:
             # TODO: Optimize this loop
             result = await self._fetch_data(item)
             results.append(result)
-        
+
         return results
-    
+
     def _fetch_data(self, key: str) -> dict:
         """Fetch from cache or generate"""
         return self._cache.get(key, {"status": "new"})
@@ -214,14 +214,14 @@ module DataProcessor
   # Configuration class
   class Config
     attr_accessor :name, :timeout, :enabled
-    
+
     def initialize(name)
       @name = name
       @timeout = 30
       @enabled = true
     end
   end
-  
+
   # Main processor class
   class Processor
     def initialize(config)
@@ -229,18 +229,18 @@ module DataProcessor
       @cache = {}
       @logger = Logger.new(STDOUT)
     end
-    
+
     # Process data with validation
     # @deprecated Use process_v2 instead
     def process(data)
       raise ArgumentError, 'Data cannot be nil' if data.nil?
-      
+
       @logger.info "Processing: #{data}"
-      
+
       # TODO: Add retry logic
       result = "Processed: #{data}"
       @cache[data] = result
-      
+
       result
     rescue StandardError => e
       @logger.error "Error: #{e.message}"
@@ -279,16 +279,16 @@ log_error() {
 # DEPRECATED: Use process_v2 instead
 process_data() {
     local data="$1"
-    
+
     if [[ -z "$data" \]\]; then
         log_error "Data cannot be empty"
         return 1
     fi
-    
+
     # TODO: Add retry logic
     local result="Processed: $data"
     echo "$result" > "$CACHE_DIR/$data"
-    
+
     echo "$result"
 }
 
@@ -317,12 +317,12 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX idx_users_email ON users(email);
 
 -- Insert sample data
-INSERT INTO users (username, email) 
+INSERT INTO users (username, email)
 VALUES ('john_doe', 'john@example.com')
 ON CONFLICT (username) DO NOTHING;
 
 -- Complex query with joins
-SELECT 
+SELECT
     u.username,
     u.email,
     COUNT(o.id) as order_count,

@@ -1,16 +1,11 @@
--- lua/raphael/cmds.lua
 local M = {}
 
 local themes = require("raphael.themes")
 local picker = require("raphael.picker")
 local history = require("raphael.theme_history")
 
---- Setup **all** Raphael user commands
 ---@param core table The main Raphael core instance
 function M.setup(core)
-  ----------------------------------------------------------------------
-  -- Core commands (originally in cmds.lua)
-  ----------------------------------------------------------------------
   vim.api.nvim_create_user_command("RaphaelToggleAuto", function()
     core.toggle_auto()
   end, { desc = "Toggle auto-apply by filetype" })

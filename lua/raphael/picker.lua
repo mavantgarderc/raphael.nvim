@@ -19,6 +19,7 @@ local search_buf, search_win
 local picker_w, picker_h, picker_row, picker_col
 
 ---@diagnostic disable-next-line: unused-local
+-- luacheck: ignore previewed
 local previewed
 local core_ref, state_ref
 local collapsed = {}
@@ -127,6 +128,7 @@ local function debounce(ms, fn)
       timer = nil
     end
     timer = vim.defer_fn(function()
+      -- luacheck: ignore 113 (unpack)
       local success, err = pcall(fn, unpack(args))
       if not success then
         log("ERROR", "Debounced function error", err)
@@ -373,6 +375,7 @@ local function render_internal(opts)
   end
 
   local current_group
+  -- luacheck: ignore
   local current_line = 1
   if picker_win and vim.api.nvim_win_is_valid(picker_win) then
     local ok, cursor = pcall(vim.api.nvim_win_get_cursor, picker_win)
@@ -635,7 +638,9 @@ local function do_preview(theme)
     if vim.fn.exists("syntax_on") then
       vim.cmd("syntax reset")
     end
-    vim.g.colors_name = nil
+    pcall(function()
+      vim.api.nvim_set_var("colors_name", nil)
+    end)
     vim.cmd("colorscheme default")
 
     local lua_path = vim.api.nvim_get_runtime_file("colors/" .. theme .. ".lua", false)[1]
@@ -648,7 +653,9 @@ local function do_preview(theme)
       else
         vim.cmd("source " .. vim.fn.fnameescape(path))
       end
-      vim.g.colors_name = theme
+      pcall(function()
+        vim.api.nvim_set_var("colors_name", nil)
+      end)
     else
       vim.cmd.colorscheme(theme)
     end
@@ -761,6 +768,7 @@ local function open_search()
 end
 
 local function update_preview(opts)
+  -- luacheck: ignore opts
   opts = opts or {}
   if not is_preview_visible then
     return
@@ -1180,10 +1188,11 @@ function M.open(core, opts)
     if core_ref and core_ref.save_state then
       pcall(core_ref.save_state)
     end
+    -- luacheck: ignore display_sort title_suffix
     ---@diagnostic disable-next-line: redefined-local
     local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
     ---@diagnostic disable-next-line: redefined-local
-    local title_suffix = display_sort .. (reverse_sorting and " revserse " or "")
+    local title_suffix = display_sort .. (reverse_sorting and " reverse " or "")
     local new_title = base_title .. " (Sort: " .. title_suffix .. ")"
     vim.api.nvim_win_set_config(picker_win, { title = new_title })
     log("DEBUG", "Sort mode changed", state_ref.sort_mode)
@@ -1195,6 +1204,7 @@ function M.open(core, opts)
     if core_ref and core_ref.save_state then
       pcall(core_ref.save_state)
     end
+    -- luacheck: ignore display_sort title_suffix
     ---@diagnostic disable-next-line: redefined-local
     local display_sort = disable_sorting and "off" or (state_ref.sort_mode or core_ref.config.sort_mode or "alpha")
     ---@diagnostic disable-next-line: redefined-local
@@ -1208,6 +1218,7 @@ function M.open(core, opts)
   map("n", "R", function()
     reverse_sorting = not reverse_sorting
     if core_ref and core_ref.save_state then
+      -- luacheck: ignore display_sort title_suffix
       pcall(core_ref.save_state)
     end
     ---@diagnostic disable-next-line: redefined-local
