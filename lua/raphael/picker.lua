@@ -985,9 +985,9 @@ function M.open(core, opts)
 
     state_ref.current = theme
     state_ref.saved = theme
-    if core_ref and core_ref.save_state then
-      pcall(core_ref.save_state)
-    end
+    state_ref.previous = vim.g.colors_name or state_ref.previous
+    local state_mod = require("raphael.state")
+    pcall(state_mod.save, state_ref, core_ref.config)
 
     picker_instances[picker_type] = false -- Reset state before closing
     log("DEBUG", "Picker instance ended", { type = picker_type })
