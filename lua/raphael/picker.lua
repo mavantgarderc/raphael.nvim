@@ -989,12 +989,73 @@ function M.open(core, opts)
     local state_mod = require("raphael.state")
     pcall(state_mod.save, state_ref, core_ref.config)
 
-    picker_instances[picker_type] = false -- Reset state before closing
+    picker_instances[picker_type] = false
     log("DEBUG", "Picker instance ended", { type = picker_type })
     close_picker(false)
   end, { buffer = picker_buf, desc = "Select theme" })
 
-  -- Rest of your keymaps continue as-is...
+  map("n", "j", function()
+    local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    local next_line = cur >= line_count and 1 or cur + 1
+    vim.api.nvim_win_set_cursor(picker_win, { next_line, 0 })
+    highlight_current_line()
+  end, { buffer = picker_buf, desc = "Next line (wrap to top)" })
+
+  map("n", "k", function()
+    local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    local prev_line = cur <= 1 and line_count or cur - 1
+    vim.api.nvim_win_set_cursor(picker_win, { prev_line, 0 })
+    highlight_current_line()
+  end, { buffer = picker_buf, desc = "Previous line (wrap to bottom)" })
+
+  map("n", "<C-j>", function()
+    if #header_lines == 0 then
+      log("DEBUG", "No header lines found")
+      return
+    end
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    log("DEBUG", "C-j navigation", { current = cur, headers = header_lines })
+    for _, ln in ipairs(header_lines) do
+      if ln > cur then
+        vim.api.nvim_win_set_cursor(picker_win, { ln, 0 })
+        highlight_current_line()
+        log("DEBUG", "Jumped to header", ln)
+
+
+        return
+      end
+    end
+    if #header_lines > 0 then
+      vim.api.nvim_win_set_cursor(picker_win, { header_lines[1], 0 })
+      highlight_current_line()
+      log("DEBUG", "Wrapped to first header", header_lines[1])
+    end
+  end, { buffer = picker_buf, desc = "Next group header" })
+
+  map("n", "<C-k>", function()
+    if #header_lines == 0 then
+      log("DEBUG", "No header lines found")
+      return
+    end
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    log("DEBUG", "C-k navigation", { current = cur, headers = header_lines })
+    for i = #header_lines, 1, -1 do
+      if header_lines[i] < cur then
+        vim.api.nvim_win_set_cursor(picker_win, { header_lines[i], 0 })
+        highlight_current_line()
+        log("DEBUG", "Jumped to header", header_lines[i])
+        return
+      end
+    end
+    if #header_lines > 0 then
+      vim.api.nvim_win_set_cursor(picker_win, { header_lines[#header_lines], 0 })
+      highlight_current_line()
+      log("DEBUG", "Wrapped to last header", header_lines[#header_lines])
+    end
+  end, { buffer = picker_buf, desc = "Previous group header" })
+
   map("n", "c", function()
     local line = vim.api.nvim_get_current_line()
     local hdr = parse_line_header(line)
