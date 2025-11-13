@@ -8,8 +8,8 @@ local autocmds = require("raphael.autocmds")
 local map = vim.keymap.set
 
 local picker_instances = {
-    configured = false,
-    all = false,
+  configured = false,
+  all = false,
 }
 
 local picker_buf, picker_win
@@ -773,8 +773,8 @@ local function update_preview(opts)
     local theme = parse_line_theme(line)
     if not theme then
       if not hdr then
-                log("WARN", "No theme found for update_preview")
-                return
+        log("WARN", "No theme found for update_preview")
+        return
       end
     end
 
@@ -1023,7 +1023,6 @@ function M.open(core, opts)
         highlight_current_line()
         log("DEBUG", "Jumped to header", ln)
 
-
         return
       end
     end
@@ -1066,6 +1065,80 @@ function M.open(core, opts)
     vim.api.nvim_win_set_cursor(picker_win, { line_count, 0 })
     highlight_current_line()
   end, { buffer = picker_buf, desc = "Go to bottom" })
+
+  map("n", "<C-u>", function()
+    local height = vim.api.nvim_win_get_height(picker_win)
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    local target = math.max(1, cur - math.floor(height / 2))
+    vim.api.nvim_win_set_cursor(picker_win, { target, 0 })
+    highlight_current_line()
+  end, { buffer = picker_buf, desc = "Page up (half-window)" })
+
+  map("n", "<C-d>", function()
+    local height = vim.api.nvim_win_get_height(picker_win)
+    local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    local target = math.min(line_count, cur + math.floor(height / 2))
+    vim.api.nvim_win_set_cursor(picker_win, { target, 0 })
+    highlight_current_line()
+  end, { buffer = picker_buf, desc = "Page down (half-window)" })
+
+
+map("n", "zt", function()
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    vim.api.nvim_win_set_cursor(picker_win, { cur, 0 })
+    vim.cmd("normal! zt")
+    highlight_current_line()
+  end, { buffer = picker_buf, desc = "Scroll line to top" })
+
+  map("n", "zz", function()
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    vim.api.nvim_win_set_cursor(picker_win, { cur, 0 })
+    vim.cmd("normal! zz")
+    highlight_current_line()
+  end, { buffer = picker_buf, desc = "Scroll line to center" })
+
+  map("n", "zb", function()
+    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
+    vim.api.nvim_win_set_cursor(picker_win, { cur, 0 })
+    vim.cmd("normal! zb")
+    highlight_current_line()
+  end, { buffer = picker_buf, desc = "Scroll line to bottom" })
+
+map("n", "gb", function()
+    for i, ln in ipairs(header_lines) do
+      local line = vim.api.nvim_buf_get_lines(picker_buf, ln - 1, ln, false)[1]
+      if line:find("Bookmarks") then
+        vim.api.nvim_win_set_cursor(picker_win, { ln, 0 })
+        highlight_current_line()
+        return
+      end
+    end
+    vim.notify("Bookmarks section not found", vim.log.levels.WARN)
+  end, { buffer = picker_buf, desc = "Jump to Bookmarks" })
+
+  map("n", "gr", function()
+    for i, ln in ipairs(header_lines) do
+      local line = vim.api.nvim_buf_get_lines(picker_buf, ln - 1, ln, false)[1]
+      if line:find("Recent") then
+        vim.api.nvim_win_set_cursor(picker_win, { ln, 0 })
+        highlight_current_line()
+        return
+      end
+    end
+    vim.notify("Recent section not found", vim.log.levels.WARN)
+  end, { buffer = picker_buf, desc = "Jump to Recent" })
+
+  map("n", "ga", function()
+    vim.api.nvim_win_set_cursor(picker_win, { 1, 0 })
+    highlight_current_line()
+  end, { buffer = picker_buf, desc = "Jump to first theme (All)" })
+
+  map("n", "<C-l>", function()
+    render(opts)
+    highlight_current_line()
+    vim.notify("Picker refreshed", vim.log.levels.INFO)
+  end, { buffer = picker_buf, desc = "Refresh picker" })
 
   map("n", "c", function()
     local line = vim.api.nvim_get_current_line()
@@ -1147,6 +1220,25 @@ function M.open(core, opts)
   end, { buffer = picker_buf, desc = "Toggle reverse sorting" })
 
   map("n", "/", open_search, { buffer = picker_buf, desc = "Search themes" })
+
+  map("n", "<C-s>", function()
+    if search_win and vim.api.nvim_win_is_valid(search_win) then
+      vim.api.nvim_win_close(search_win, true)
+      search_win = nil
+      vim.notify("Search bar hidden", vim.log.levels.INFO)
+    else
+      open_search()
+    end
+  end, { buffer = picker_buf, desc = "Toggle search bar" })
+
+  map("n", "<leader>/", function()
+    if search_win and vim.api.nvim_win_is_valid(search_win) then
+      vim.api.nvim_set_current_win(search_win)
+      vim.cmd("startinsert")
+    else
+      open_search()
+    end
+  end, { buffer = picker_buf, desc = "Focus search" })
 
   map("n", "b", function()
     local line = vim.api.nvim_get_current_line()
