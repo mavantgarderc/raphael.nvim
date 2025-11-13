@@ -63,7 +63,8 @@ local help = {
   "  `j`/`k`         - Navigate (wraps around)",
   "  `<C-j>`/`<C-k>` - Jump to next/prev group header (wraps)",
   "  `[g`/`]g`       - Jump to prev/next group header (wraps)",
-  "  `[b`/`]b`       - Jumpt to prev/next bookmark",
+  "  `[b`/`]b`       - Jump to prev/next bookmark",
+  "  `[r`/`]r`       - Jump to prev/next history state",
   "",
   "Actions:",
   "  `<CR>`        - Select theme",
@@ -400,7 +401,7 @@ local function render_internal(opts)
 
   local config = core_ref.config
   local show_bookmarks = config.bookmark_group ~= false
-  local show_recent    = config.recent_group ~= false
+  local show_recent = config.recent_group ~= false
 
   local display_map = vim.deepcopy(themes.theme_map)
   if exclude_configured then
@@ -420,7 +421,9 @@ local function render_internal(opts)
   local sort_mode = state_ref.sort_mode or config.sort_mode or "alpha"
 
   local function sort_filtered(filtered)
-    if disable_sorting then return end
+    if disable_sorting then
+      return
+    end
 
     local function cmp_alpha(a, b)
       return reverse_sorting and a:lower() > b:lower() or a:lower() < b:lower()
@@ -1084,8 +1087,7 @@ function M.open(core, opts)
     highlight_current_line()
   end, { buffer = picker_buf, desc = "Page down (half-window)" })
 
-
-map("n", "zt", function()
+  map("n", "zt", function()
     local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
     vim.api.nvim_win_set_cursor(picker_win, { cur, 0 })
     vim.cmd("normal! zt")
@@ -1106,8 +1108,8 @@ map("n", "zt", function()
     highlight_current_line()
   end, { buffer = picker_buf, desc = "Scroll line to bottom" })
 
-map("n", "gb", function()
-    for i, ln in ipairs(header_lines) do
+  map("n", "gb", function()
+    for _, ln in ipairs(header_lines) do
       local line = vim.api.nvim_buf_get_lines(picker_buf, ln - 1, ln, false)[1]
       if line:find("Bookmarks") then
         vim.api.nvim_win_set_cursor(picker_win, { ln, 0 })
@@ -1119,7 +1121,7 @@ map("n", "gb", function()
   end, { buffer = picker_buf, desc = "Jump to Bookmarks" })
 
   map("n", "gr", function()
-    for i, ln in ipairs(header_lines) do
+    for _, ln in ipairs(header_lines) do
       local line = vim.api.nvim_buf_get_lines(picker_buf, ln - 1, ln, false)[1]
       if line:find("Recent") then
         vim.api.nvim_win_set_cursor(picker_win, { ln, 0 })
@@ -1155,14 +1157,12 @@ map("n", "gb", function()
         end
       end
     end
-
     if hdr then
       if hdr == "Bookmarks" then
         hdr = "__bookmarks"
       elseif hdr == "Recent" then
         hdr = "__recent"
       end
-
       toggle_group(hdr)
       state_ref.collapsed = vim.deepcopy(collapsed)
       if core_ref and core_ref.save_state then
@@ -1222,25 +1222,6 @@ map("n", "gb", function()
 
   map("n", "/", open_search, { buffer = picker_buf, desc = "Search themes" })
 
-  map("n", "<C-s>", function()
-    if search_win and vim.api.nvim_win_is_valid(search_win) then
-      vim.api.nvim_win_close(search_win, true)
-      search_win = nil
-      vim.notify("Search bar hidden", vim.log.levels.INFO)
-    else
-      open_search()
-    end
-  end, { buffer = picker_buf, desc = "Toggle search bar" })
-
-  map("n", "<leader>/", function()
-    if search_win and vim.api.nvim_win_is_valid(search_win) then
-      vim.api.nvim_set_current_win(search_win)
-      vim.cmd("startinsert")
-    else
-      open_search()
-    end
-  end, { buffer = picker_buf, desc = "Focus search" })
-
   map("n", "b", function()
     local line = vim.api.nvim_get_current_line()
     local theme = parse_line_theme(line)
@@ -1286,7 +1267,9 @@ map("n", "gb", function()
   end, { buffer = picker_buf, desc = "Redo theme change" })
 
   map("n", "]b", function()
-    if not next(bookmarks) then return end
+    if not next(bookmarks) then
+      return
+    end
     local lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
     local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
     local skip_start, skip_end = 0, 0
@@ -1300,7 +1283,9 @@ map("n", "gb", function()
               break
             end
           end
-          if skip_end == 0 then skip_end = #lines end
+          if skip_end == 0 then
+            skip_end = #lines
+          end
           break
         end
       end
@@ -1309,7 +1294,9 @@ map("n", "gb", function()
       return i >= skip_start and i <= skip_end
     end
     for i = cur + 1, #lines do
-      if is_in_skip(i) then i = skip_end + 1 end
+      if is_in_skip(i) then
+        i = skip_end + 1
+      end
       local theme = parse_line_theme(lines[i])
       if theme and bookmarks[theme] then
         vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
@@ -1318,7 +1305,9 @@ map("n", "gb", function()
       end
     end
     for i = 1, cur - 1 do
-      if is_in_skip(i) then goto continue end
+      if is_in_skip(i) then
+        goto continue
+      end
       local theme = parse_line_theme(lines[i])
       if theme and bookmarks[theme] then
         vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
@@ -1330,7 +1319,9 @@ map("n", "gb", function()
   end, { buffer = picker_buf, desc = "Next bookmark (skip group)" })
 
   map("n", "[b", function()
-    if not next(bookmarks) then return end
+    if not next(bookmarks) then
+      return
+    end
     local lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
     local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
     local skip_start, skip_end = 0, 0
@@ -1344,7 +1335,9 @@ map("n", "gb", function()
               break
             end
           end
-          if skip_end == 0 then skip_end = #lines end
+          if skip_end == 0 then
+            skip_end = #lines
+          end
           break
         end
       end
@@ -1353,7 +1346,9 @@ map("n", "gb", function()
       return i >= skip_start and i <= skip_end
     end
     for i = cur - 1, 1, -1 do
-      if is_in_skip(i) then i = skip_start - 1 end
+      if is_in_skip(i) then
+        i = skip_start - 1
+      end
       local theme = parse_line_theme(lines[i])
       if theme and bookmarks[theme] then
         vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
@@ -1362,7 +1357,9 @@ map("n", "gb", function()
       end
     end
     for i = #lines, cur + 1, -1 do
-      if is_in_skip(i) then goto continue end
+      if is_in_skip(i) then
+        goto continue
+      end
       local theme = parse_line_theme(lines[i])
       if theme and bookmarks[theme] then
         vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
@@ -1373,35 +1370,33 @@ map("n", "gb", function()
     end
   end, { buffer = picker_buf, desc = "Prev bookmark (skip group)" })
 
-  -- === [r / ]r : Next/Prev RECENT (skip Recent group if shown) ===
   map("n", "]r", function()
-    if not (state_ref.history and #state_ref.history > 0) then return end
+    if not (state_ref.history and #state_ref.history > 0) then
+      return
+    end
     local lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
     local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
-
     local skip_start, skip_end = 0, 0
     if core_ref.config.recent_group ~= false then
       for _, ln in ipairs(header_lines) do
         if (lines[ln] or ""):find("Recent") then
           skip_start = ln
-          -- Find next header
           for _, next_ln in ipairs(header_lines) do
             if next_ln > ln then
               skip_end = next_ln - 1
               break
             end
           end
-          if skip_end == 0 then skip_end = #lines end
+          if skip_end == 0 then
+            skip_end = #lines
+          end
           break
         end
       end
     end
-
     local function is_in_skip(i)
       return i >= skip_start and i <= skip_end
     end
-
-    -- Forward search
     for i = cur + 1, #lines do
       if is_in_skip(i) then
         i = skip_end + 1
@@ -1413,10 +1408,10 @@ map("n", "gb", function()
         return
       end
     end
-
-    -- Wrap to top
     for i = 1, cur - 1 do
-      if is_in_skip(i) then goto continue end
+      if is_in_skip(i) then
+        goto continue
+      end
       local theme = parse_line_theme(lines[i])
       if theme and vim.tbl_contains(state_ref.history, theme) then
         vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
@@ -1428,10 +1423,11 @@ map("n", "gb", function()
   end, { buffer = picker_buf, desc = "Next recent (skip group)" })
 
   map("n", "[r", function()
-    if not (state_ref.history and #state_ref.history > 0) then return end
+    if not (state_ref.history and #state_ref.history > 0) then
+      return
+    end
     local lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
     local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
-
     local skip_start, skip_end = 0, 0
     if core_ref.config.recent_group ~= false then
       for _, ln in ipairs(header_lines) do
@@ -1443,17 +1439,16 @@ map("n", "gb", function()
               break
             end
           end
-          if skip_end == 0 then skip_end = #lines end
+          if skip_end == 0 then
+            skip_end = #lines
+          end
           break
         end
       end
     end
-
     local function is_in_skip(i)
       return i >= skip_start and i <= skip_end
     end
-
-    -- Backward search
     for i = cur - 1, 1, -1 do
       if is_in_skip(i) then
         i = skip_start - 1
@@ -1465,10 +1460,10 @@ map("n", "gb", function()
         return
       end
     end
-
-    -- Wrap to bottom
     for i = #lines, cur + 1, -1 do
-      if is_in_skip(i) then goto continue end
+      if is_in_skip(i) then
+        goto continue
+      end
       local theme = parse_line_theme(lines[i])
       if theme and vim.tbl_contains(state_ref.history, theme) then
         vim.api.nvim_win_set_cursor(picker_win, { i, 0 })
@@ -1508,22 +1503,6 @@ map("n", "gb", function()
       highlight_current_line()
     end
   end, { buffer = picker_buf, desc = "Previous group" })
-
-  map("n", "]t", function()
-    local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
-    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
-    local next_line = cur >= line_count and 1 or cur + 1
-    vim.api.nvim_win_set_cursor(picker_win, { next_line, 0 })
-    highlight_current_line()
-  end, { buffer = picker_buf, desc = "Next theme" })
-
-  map("n", "[t", function()
-    local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
-    local cur = vim.api.nvim_win_get_cursor(picker_win)[1]
-    local prev_line = cur <= 1 and line_count or cur - 1
-    vim.api.nvim_win_set_cursor(picker_win, { prev_line, 0 })
-    highlight_current_line()
-  end, { buffer = picker_buf, desc = "Previous theme" })
 
   map("n", "r", function()
     local all_themes = themes.get_all_themes()

@@ -13,7 +13,7 @@ M.defaults = {
   },
   default_theme = "kanagawa-paper-ink",
   bookmark_group = true,
-  recent_group   = false,
+  recent_group = false,
   state_file = vim.fn.stdpath("data") .. "/raphael/state.json",
   theme_map = nil,
   filetype_themes = {},

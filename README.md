@@ -89,9 +89,17 @@ Inside picker:
 
 `c`: Collapse/expand group
 
-`q` / `<Esc>`: Cancel and revert
+`q`/`<Esc>`: Cancel and revert
 
-`<C-j>` & `<C-k>`: Next/previous Header
+`<C-j>`/`<C-k>` & `[g`/`]g`: Next/previous header group
+
+`[b`/`]b`: Jump to prev/next bookmark
+
+`[r`/`]r`: Jump to prev/next history state
+
+`i`/`I`: Iterate through inline sample codes
+
+`u`/`<C-r>`: Undo/redo theme change
 
 `s`: Change sort of theme list
 
