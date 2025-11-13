@@ -1056,6 +1056,17 @@ function M.open(core, opts)
     end
   end, { buffer = picker_buf, desc = "Previous group header" })
 
+  map("n", "gg", function()
+    vim.api.nvim_win_set_cursor(picker_win, { 1, 0 })
+    highlight_current_line()
+  end, { buffer = picker_buf, desc = "Go to top" })
+
+  map("n", "G", function()
+    local line_count = #vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+    vim.api.nvim_win_set_cursor(picker_win, { line_count, 0 })
+    highlight_current_line()
+  end, { buffer = picker_buf, desc = "Go to bottom" })
+
   map("n", "c", function()
     local line = vim.api.nvim_get_current_line()
     local hdr = parse_line_header(line)
