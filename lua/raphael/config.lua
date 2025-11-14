@@ -1,3 +1,4 @@
+-- config.lua
 local M = {}
 
 M.defaults = {
@@ -22,7 +23,12 @@ M.defaults = {
   custom_sorts = {},
   theme_aliases = {},
   history_max_size = 13,
-  sample_preview = { enabled = true, relative_size = 0.5 },
+
+  sample_preview = {
+    enabled = true,
+    relative_size = 0.5,
+    languages = nil,
+  },
 
   enable_autocmds = true,
   enable_commands = true,

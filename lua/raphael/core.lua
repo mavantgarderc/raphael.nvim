@@ -3,6 +3,7 @@ local M = {}
 local themes = require("raphael.themes")
 local state_mod = require("raphael.state")
 local history = require("raphael.theme_history")
+local picker = require("raphael.picker")
 
 M.state = nil
 M.config = nil
@@ -112,10 +113,6 @@ end
 function M.apply(theme, from_manual)
   if not theme or not themes.is_available(theme) then
     vim.notify("raphael: theme not available: " .. tostring(theme), vim.log.levels.WARN)
-    return
-  end
-
-  if vim.g.colors_name == theme then
     return
   end
 
@@ -232,6 +229,10 @@ function M.restore_from_session()
       pcall(vim.cmd.colorscheme, session_theme)
     end
   end
+end
+
+function M.open_picker(opts)
+  picker.open(M, opts)
 end
 
 return M

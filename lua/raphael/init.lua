@@ -21,8 +21,7 @@ function M.open_picker(opts)
     vim.notify("raphael: picker disabled in config", vim.log.levels.WARN)
     return
   end
-  local picker = require("raphael.picker")
-  picker.open(core, opts)
+  core.open_picker(opts)
 end
 
 function M.setup(user_config)
@@ -32,17 +31,17 @@ function M.setup(user_config)
 
   if M.config.enable_autocmds then
     local autocmds = require("raphael.autocmds")
-    autocmds.setup(M)
+    autocmds.setup(core)
   end
 
   if M.config.enable_commands then
     local cmds = require("raphael.cmds")
-    cmds.setup(M)
+    cmds.setup(core)
   end
 
   if M.config.enable_keymaps then
     local keymaps = require("raphael.keymaps")
-    keymaps.setup(M)
+    keymaps.setup(core)
   end
 end
 

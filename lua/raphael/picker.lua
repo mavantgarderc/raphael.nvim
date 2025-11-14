@@ -19,8 +19,7 @@ local search_buf, search_win
 local picker_w, picker_h, picker_row, picker_col
 
 ---@diagnostic disable-next-line: unused-local
--- luacheck: ignore previewed
-local previewed
+local previewed -- luacheck: ignore previewed
 local core_ref, state_ref
 local collapsed = {}
 local bookmarks = {}
@@ -83,8 +82,8 @@ local help = {
   "  `J`           - Jump to history position",
   "  `T`           - Show quick stats",
   "  `r`           - Apply random theme",
-  "  `i`           - Show Code Sample, Iteraate languages forward",
-  "  `I`           - Iterate lanuagges backward",
+  "  `i`           - Show Code Sample, Iterate languages forward",
+  "  `I`           - Iterate languages backward",
   "",
   "Other:",
   "  `q`/`<Esc>`     - Quit (revert theme)",
@@ -164,7 +163,7 @@ local function parse_line_theme(line)
   if theme and theme ~= "" then
     local aliases = core_ref.config.theme_aliases or {}
     local reverse_aliases = {}
-    for real, alias in pairs(aliases) do
+    for alias, real in pairs(aliases) do
       reverse_aliases[alias] = real
     end
     return reverse_aliases[theme] or theme
@@ -178,7 +177,7 @@ local function parse_line_theme(line)
     if last ~= "" then
       local aliases = core_ref.config.theme_aliases or {}
       local reverse_aliases = {}
-      for real, alias in pairs(aliases) do
+      for alias, real in pairs(aliases) do
         reverse_aliases[alias] = real
       end
       return reverse_aliases[last] or last
@@ -597,13 +596,49 @@ local function toggle_group(group)
   render()
 end
 
+local function load_theme(theme, set_name)
+  if not theme or not themes.is_available(theme) then
+    return
+  end
+
+  vim.cmd("hi clear")
+  if vim.fn.exists("syntax_on") then
+    vim.cmd("syntax reset")
+  end
+  pcall(vim.api.nvim_set_var, "colors_name", nil)
+
+  local lua_path = vim.api.nvim_get_runtime_file("colors/" .. theme .. ".lua", false)[1]
+  local vim_path = vim.api.nvim_get_runtime_file("colors/" .. theme .. ".vim", false)[1]
+  local path = lua_path or vim_path
+
+  if path then
+    if lua_path then
+      dofile(path)
+    else
+      vim.cmd("source " .. vim.fn.fnameescape(path))
+    end
+  else
+    vim.cmd.colorscheme(theme)
+  end
+
+  vim.cmd("syntax on")
+  vim.cmd("doautocmd ColorScheme")
+  vim.cmd("redraw!")
+
+  if set_name then
+    vim.g.colors_name = theme
+  else
+    pcall(vim.api.nvim_set_var, "colors_name", nil)
+  end
+end
+
 local function close_picker(revert)
   log("DEBUG", "Closing picker", { revert = revert })
 
   if revert and state_ref and state_ref.previous and themes.is_available(state_ref.previous) then
-    local ok, err = pcall(core_ref.apply, state_ref.previous, false)
+    local ok, err = pcall(load_theme, state_ref.previous, true)
     if not ok then
-      log("ERROR", "Failed to apply reverted theme", err)
+      log("ERROR", "Failed to revert theme", err)
     end
   end
 
@@ -632,43 +667,13 @@ local function do_preview(theme)
   ---@diagnostic disable-next-line: unused-local
   previewed = theme
 
-  local ok, err = pcall(function()
-    vim.cmd("hi clear")
-    vim.cmd("syntax off")
-    if vim.fn.exists("syntax_on") then
-      vim.cmd("syntax reset")
-    end
-    pcall(function()
-      vim.api.nvim_set_var("colors_name", nil)
-    end)
-    vim.cmd("colorscheme default")
-
-    local lua_path = vim.api.nvim_get_runtime_file("colors/" .. theme .. ".lua", false)[1]
-    local vim_path = vim.api.nvim_get_runtime_file("colors/" .. theme .. ".vim", false)[1]
-    local path = lua_path or vim_path
-
-    if path then
-      if lua_path then
-        dofile(path)
-      else
-        vim.cmd("source " .. vim.fn.fnameescape(path))
-      end
-      pcall(function()
-        vim.api.nvim_set_var("colors_name", nil)
-      end)
-    else
-      vim.cmd.colorscheme(theme)
-    end
-
-    vim.cmd("syntax on")
-    vim.cmd("doautocmd ColorScheme")
-    palette_hl_cache = {}
-    vim.cmd("redraw!")
-  end)
+  local ok, err = pcall(load_theme, theme, false)
   if not ok then
     log("ERROR", "Failed to preview theme", { theme = theme, error = err })
     return
   end
+
+  palette_hl_cache = {}
 
   ok, err = pcall(M.update_palette, theme)
   if not ok then
@@ -851,20 +856,38 @@ local function open_preview()
   end
 end
 
-local function toggle_and_iterate_preview()
+local function get_next_lang(current, langs)
+  for i, l in ipairs(langs) do
+    if l == current then
+      return langs[(i % #langs) + 1]
+    end
+  end
+  return langs[1] or "lua"
+end
+
+local function get_prev_lang(current, langs)
+  for i, l in ipairs(langs) do
+    if l == current then
+      return langs[((i - 2) % #langs) + 1]
+    end
+  end
+  return langs[#langs] or "lua"
+end
+
+local function toggle_and_iterate_preview(allowed_langs)
   if not is_preview_visible then
     open_preview()
   else
-    current_lang = samples.get_next_language(current_lang)
+    current_lang = get_next_lang(current_lang, allowed_langs)
     update_preview()
   end
 end
 
-local function iterate_backward_preview()
+local function iterate_backward_preview(allowed_langs)
   if not is_preview_visible then
     return
   end
-  current_lang = samples.get_previous_language(current_lang)
+  current_lang = get_prev_lang(current_lang, allowed_langs)
   update_preview()
 end
 
@@ -939,10 +962,7 @@ function M.open(core, opts)
     title = title,
   })
 
-  state_ref.previous = vim.g.colors_name
-  if not state_ref.previous then
-    state_ref.previous = state_ref.saved
-  end
+  state_ref.previous = state_ref.current or vim.g.colors_name or state_ref.saved
   log("DEBUG", "Previous theme saved", state_ref.previous)
 
   map("n", "q", function()
@@ -1603,16 +1623,25 @@ function M.open(core, opts)
       vim.api.nvim_set_option_value("swapfile", false, { buf = code_buf })
     end
 
-    current_lang = core_ref.config.sample_preview.languages[1] or "lua"
+    local allowed_langs = core_ref.config.sample_preview.languages
+      or vim.tbl_map(function(lang)
+        return lang.name
+      end, samples.languages)
+
+    current_lang = allowed_langs[1] or "lua"
 
     vim.api.nvim_buf_set_keymap(picker_buf, "n", "i", "", {
-      callback = toggle_and_iterate_preview,
+      callback = function()
+        toggle_and_iterate_preview(allowed_langs)
+      end,
       silent = true,
       noremap = true,
     })
 
     vim.api.nvim_buf_set_keymap(picker_buf, "n", "I", "", {
-      callback = iterate_backward_preview,
+      callback = function()
+        iterate_backward_preview(allowed_langs)
+      end,
       silent = true,
       noremap = true,
     })

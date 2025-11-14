@@ -252,7 +252,7 @@ end
 # FIXME: Add thread safety
 ]]
 
-M.sh = [[
+M.sh = [==[
 #!/bin/bash
 # Data processing script
 
@@ -280,7 +280,7 @@ log_error() {
 process_data() {
     local data="$1"
 
-    if [[ -z "$data" \]\]; then
+    if [[ -z "$data" ]]; then
         log_error "Data cannot be empty"
         return 1
     fi
@@ -299,7 +299,7 @@ main() {
 
 # FIXME: Add error handling
 main "$@"
-]]
+]==]
 
 M.sql = [[
 -- Database schema and queries

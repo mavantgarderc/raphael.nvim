@@ -2,6 +2,7 @@ local themes = require("raphael.themes")
 
 local M = {}
 
+---@diagnostic disable-next-line: unused-local, unused-function
 local function guard_state(fn)
   return function(...)
     local core = select(1, ...)
@@ -15,18 +16,18 @@ end
 ---@diagnostic disable-next-line: unused-local
 function M.setup(core) -- luacheck: ignore
   vim.api.nvim_create_autocmd("BufEnter", {
-    callback = guard_state(function(inner_core)
-      if not inner_core.state.auto_apply then
+    callback = function(ev)
+      if not core.state.auto_apply then
         return
       end
-      local ft = vim.bo.filetype
+      local ft = vim.bo[ev.buf].filetype
       local theme = themes.filetype_themes[ft]
       if theme and themes.is_available(theme) then
-        inner_core.apply(theme, false)
+        core.apply(theme, false)
       else
-        inner_core.apply(inner_core.config.default_theme, false)
+        core.apply(core.config.default_theme, false)
       end
-    end),
+    end,
   })
 
   vim.api.nvim_create_autocmd("LspAttach", {
@@ -38,26 +39,26 @@ function M.setup(core) -- luacheck: ignore
   })
 
   vim.api.nvim_create_autocmd("FileType", {
-    callback = guard_state(function(inner_core, args)
-      if not inner_core.state.auto_apply then
+    callback = function(ev)
+      if not core.state.auto_apply then
         return
       end
 
-      local ft = args.match
+      local ft = ev.match
       local theme_ft = themes.filetype_themes[ft]
 
       if theme_ft and themes.is_available(theme_ft) then
-        inner_core.apply(theme_ft, false)
+        core.apply(theme_ft, false)
       elseif theme_ft and not themes.is_available(theme_ft) then
         vim.notify(
           string.format("raphael: filetype theme '%s' for %s not available, using default", theme_ft, ft),
           vim.log.levels.WARN
         )
-        if themes.is_available(inner_core.config.default_theme) then
-          inner_core.apply(inner_core.config.default_theme, false)
+        if themes.is_available(core.config.default_theme) then
+          core.apply(core.config.default_theme, false)
         end
       end
-    end),
+    end,
   })
 end
 
