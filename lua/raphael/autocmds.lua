@@ -1,17 +1,6 @@
-local themes = require("raphael.themes")
-
 local M = {}
 
----@diagnostic disable-next-line: unused-local, unused-function
-local function guard_state(fn)
-  return function(...)
-    local core = select(1, ...)
-    if not core or not core.state then
-      return
-    end
-    return fn(core, select(2, ...))
-  end
-end
+local themes = require("raphael.themes")
 
 ---@diagnostic disable-next-line: unused-local
 function M.setup(core) -- luacheck: ignore

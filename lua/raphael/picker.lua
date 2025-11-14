@@ -626,7 +626,7 @@ local function load_theme(theme, set_name)
   vim.cmd("redraw!")
 
   if set_name then
-    vim.g.colors_name = theme
+    pcall(vim.api.nvim_set_var, "colors_name", theme)
   else
     pcall(vim.api.nvim_set_var, "colors_name", nil)
   end
