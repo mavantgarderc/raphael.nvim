@@ -1015,12 +1015,6 @@ function M.open(core, opts)
       pcall(vim.api.nvim_win_close, code_win, true)
     end
 
-    state_ref.current = theme
-    state_ref.saved = theme
-    state_ref.previous = vim.g.colors_name or state_ref.previous
-    local state_mod = require("raphael.state")
-    pcall(state_mod.save, state_ref, core_ref.config)
-
     picker_instances[picker_type] = false
     log("DEBUG", "Picker instance ended", { type = picker_type })
     close_picker(false)

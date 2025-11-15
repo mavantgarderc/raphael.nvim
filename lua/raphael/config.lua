@@ -30,6 +30,19 @@ M.defaults = {
     languages = nil,
   },
 
+  on_apply = function(theme)
+    vim.schedule(function()
+      local ok, lualine = pcall(require, "lualine")
+      if ok then
+        local lualine_theme = "auto"
+        local config = lualine.get_config()
+        config.options = config.options or {}
+        config.options.theme = lualine_theme
+        lualine.setup(config)
+      end
+    end)
+  end,
+
   enable_autocmds = true,
   enable_commands = true,
   enable_keymaps = true,

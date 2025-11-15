@@ -136,12 +136,13 @@ function M.apply(theme, from_manual)
   if from_manual then
     history.add(theme)
     M.state.saved = theme
+  else
+    vim.notify(string.format("DEBUG: NOT saving theme '%s' (from_manual=false)", theme), vim.log.levels.WARN)
   end
 
   M.add_to_history(theme)
-  state_mod.save(M.state, M.config)
 
-  vim.notify("raphael: applied " .. theme)
+  state_mod.save(M.state, M.config)
 
   if M.config.on_apply then
     M.config.on_apply(theme)
