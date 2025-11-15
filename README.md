@@ -45,26 +45,53 @@ return {
 Configure in your plugin spec's opts table. Defaults shown below:
 
 ```lua
-luaopts = {
-  leader = "<leader>t",
-  mappings = {
-    next = ">",
-    previous = "<",
-    random = "r",
+  -- Method I for keymaps
+  keys = {
+    { "<leader>tp", function() raphael.open_picker({ only_configured = true }) end, desc = "Raphael: Configured themes", },
+    { "<leader>t/", function() raphael.open_picker({ exclude_configured = true }) end, desc = "Raphael: All other themes", },
+    { "<leader>ta", function() raphael.toggle_auto() end, desc = "Raphael: Toggle auto-apply", },
+    { "<leader>tR", function() raphael.refresh_and_reload() end, desc = "Raphael: Refresh themes", },
+    { "<leader>ts", function() raphael.show_status() end, desc = "Raphael: Show status", },
   },
-  default_theme = "kanagawa-paper-ink",
-  theme_map = {  -- Grouped or flat list of themes
-    pantheon = { ... },
-    kanagawa = { "kanagawa-paper-ink" },
-    -- ...
+  -- Method II for keymaps
+  keys = {
+    { "<leader>tp", raphael.open_picker, desc = "Raphael: Configured themes" },
+    { "<leader>t/", raphael.open_picker, desc = "Raphael: All other themes" },
+    { "<leader>ta", raphael.toggle_auto, desc = "Raphael: Toggle auto-apply" },
+    { "<leader>tR", raphael.refresh_and_reload, desc = "Raphael: Refresh themes" },
+    { "<leader>ts", raphael.show_status, desc = "Raphael: Show status" },
   },
-  filetype_themes = {  -- Auto-apply per filetype
-    -- extension/filetype = "theme"
-    lua = "kanagawa-paper-ink",
-    python = "kanagawa-wave",
-    -- ...
-  },
-}
+
+  opts = {
+    -- Method III for keymaps
+    leader = "<leader>t",
+    mappings = {
+      picker = "p",
+      next = ">",
+      previous = "<",
+      others = "/",
+      auto = "a",
+      refresh = "R",
+      status = "s",
+    },
+
+    theme_aliases = {
+      ["evergardern-fall"] = "Garden-Fall",
+    },
+
+    default_theme = "kanagawa-paper-ink",
+    theme_map = {  -- Grouped or flat list of themes
+      pantheon = { ... },
+      kanagawa = { "kanagawa-paper-ink" },
+      -- ...
+    },
+    filetype_themes = {  -- Auto-apply per filetype
+      -- extension/filetype = "theme"
+      lua = "kanagawa-paper-ink",
+      python = "kanagawa-wave",
+      -- ...
+    },
+  }
 ```
 
 ### Keymaps
@@ -78,6 +105,10 @@ luaopts = {
 `<leader>tR`: Refresh themes and reload current
 
 `<leader>ts`: Show status
+
+`<leader>t<`: Previous theme
+
+`<leader>t>`: Next theme
 
 Inside picker:
 
