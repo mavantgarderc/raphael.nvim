@@ -656,6 +656,7 @@ local function close_picker(revert)
   ---@diagnostic disable-next-line: unused-local
   search_query, previewed, picker_opts = "", nil, {}
   search_query, picker_opts = "", {}
+  is_preview_visible = false
 
   log("DEBUG", "Picker closed successfully")
 end
