@@ -1,12 +1,18 @@
 -- lua/raphael/core/cache.lua
 --- Read/write persistent state: themes, bookmarks, history, undo stack, etc.
---- Uses JSON format for human-readability
+--- Uses JSON format for human-readability and a single STATE_FILE path.
 
 local constants = require("raphael.constants")
 
 local M = {}
 
---- Ensure cache directory exists
+-- ────────────────────────────────────────────────────────────────────────
+-- Internals
+-- ────────────────────────────────────────────────────────────────────────
+
+local uv = vim.loop
+
+--- Ensure the directory for STATE_FILE exists.
 local function ensure_dir()
   local dir = vim.fn.fnamemodify(constants.STATE_FILE, ":h")
   if vim.fn.isdirectory(dir) == 0 then
@@ -14,12 +20,12 @@ local function ensure_dir()
   end
 end
 
---- Default state structure
+--- Default state structure.
 local function default_state()
   return {
     current = nil, -- currently active theme
-    saved = nil, -- last manually saved theme (persists across sessions)
-    previous = nil, -- theme before current (for quick toggle)
+    saved = nil, -- last manually saved theme
+    previous = nil, -- theme before current (for quick revert)
     auto_apply = false, -- auto-apply enabled/disabled
 
     bookmarks = {}, -- array of bookmarked theme names
@@ -27,18 +33,94 @@ local function default_state()
     usage = {}, -- map of theme_name -> usage_count
 
     collapsed = {}, -- map of group_key -> boolean (collapsed state)
-    sort_mode = "alphabetical", -- current sort mode
+
+    -- canonical short sort modes: "alpha", "recent", "usage"
+    sort_mode = "alpha",
 
     undo_history = {
       stack = {}, -- undo stack of themes
       index = 0, -- current position in stack
-      max_size = constants.HISTORY_MAX_SIZE,
+      max_size = constants.HISTORY_MAX_SIZE, -- max stack size
     },
   }
 end
 
---- Read state from disk
----@return table state The current state, or default if file doesn't exist
+--- Normalize and merge decoded JSON into a full state table.
+---@param decoded table|nil
+---@return table
+local function normalize_state(decoded)
+  local base = default_state()
+
+  if type(decoded) ~= "table" then
+    return base
+  end
+
+  for k, v in pairs(decoded) do
+    base[k] = v
+  end
+
+  -- Ensure nested undo_history exists and is well-formed
+  if type(base.undo_history) ~= "table" then
+    base.undo_history = {
+      stack = {},
+      index = 0,
+      max_size = constants.HISTORY_MAX_SIZE,
+    }
+  else
+    base.undo_history.stack = base.undo_history.stack or {}
+    base.undo_history.index = base.undo_history.index or 0
+    base.undo_history.max_size = base.undo_history.max_size or constants.HISTORY_MAX_SIZE
+  end
+
+  -- Normalize sort_mode:
+  --  - prefer short names: "alpha", "recent", "usage"
+  --  - map legacy "alphabetical" -> "alpha"
+  local mode = base.sort_mode or "alpha"
+  if mode == "alphabetical" then
+    mode = "alpha"
+  end
+  base.sort_mode = mode
+
+  -- Ensure containers exist
+  base.bookmarks = base.bookmarks or {}
+  base.history = base.history or {}
+  base.usage = base.usage or {}
+  base.collapsed = base.collapsed or {}
+
+  return base
+end
+
+--- Async write helper.
+---@param path string
+---@param data string
+local function async_write(path, data)
+  ensure_dir()
+
+  uv.fs_open(path, "w", 438, function(open_err, fd)
+    if open_err or not fd then
+      vim.schedule(function()
+        vim.notify("raphael.nvim: Failed to open state file for writing: " .. tostring(open_err), vim.log.levels.ERROR)
+      end)
+      return
+    end
+
+    uv.fs_write(fd, data, -1, function(write_err)
+      if write_err and write_err ~= 0 then
+        vim.schedule(function()
+          vim.notify("raphael.nvim: Failed to write state file: " .. tostring(write_err), vim.log.levels.ERROR)
+        end)
+      end
+      uv.fs_close(fd)
+    end)
+  end)
+end
+
+-- ────────────────────────────────────────────────────────────────────────
+-- Core API: full read/write
+-- ────────────────────────────────────────────────────────────────────────
+
+--- Read state from disk (or return defaults if file doesn't exist / is invalid).
+---@return table state
 function M.read()
   local file = io.open(constants.STATE_FILE, "r")
   if not file then
@@ -58,55 +140,58 @@ function M.read()
     return default_state()
   end
 
-  -- Merge with defaults to ensure all fields exist (for backward compatibility)
-  local state = default_state()
-  for k, v in pairs(decoded) do
-    state[k] = v
-  end
-
-  return state
+  return normalize_state(decoded)
 end
 
---- Write state to disk
----@param state table State to persist
----@return boolean success Whether write succeeded
+--- Write full state to disk (async).
+---@param state table
+---@return boolean success
 function M.write(state)
-  ensure_dir()
+  local normalized = normalize_state(state)
 
-  local ok, encoded = pcall(vim.json.encode, state)
+  local ok, encoded = pcall(vim.json.encode, normalized)
   if not ok then
     vim.notify("raphael.nvim: Failed to encode state", vim.log.levels.ERROR)
     return false
   end
 
-  local file = io.open(constants.STATE_FILE, "w")
-  if not file then
-    vim.notify("raphael.nvim: Failed to open state file for writing", vim.log.levels.ERROR)
-    return false
-  end
-
-  file:write(encoded)
-  file:close()
+  async_write(constants.STATE_FILE, encoded)
   return true
 end
 
---- Get current theme
----@return string|nil theme Current theme name
+--- For debugging only: return current state from disk.
+---@return table
+function M.get_state()
+  return M.read()
+end
+
+--- Clear everything and reset to defaults.
+function M.clear()
+  local state = default_state()
+  M.write(state)
+end
+
+-- ────────────────────────────────────────────────────────────────────────
+-- Convenience helpers (stateless, always go via read/write)
+-- ────────────────────────────────────────────────────────────────────────
+
+--- Get current theme.
+---@return string|nil
 function M.get_current()
   local state = M.read()
   return state.current
 end
 
---- Get saved theme (manually set, persists across sessions)
----@return string|nil theme Saved theme name
+--- Get saved theme (manually persisted theme).
+---@return string|nil
 function M.get_saved()
   local state = M.read()
   return state.saved
 end
 
---- Set current theme (and optionally save it)
----@param theme string Theme name
----@param save boolean Whether to persist as saved theme
+--- Set current theme (and optionally mark as saved).
+---@param theme string
+---@param save boolean
 function M.set_current(theme, save)
   local state = M.read()
   state.previous = state.current
@@ -119,16 +204,16 @@ function M.set_current(theme, save)
   M.write(state)
 end
 
---- Get bookmarks
----@return table bookmarks Array of bookmarked theme names
+--- Get bookmarks.
+---@return string[] bookmarks
 function M.get_bookmarks()
   local state = M.read()
   return state.bookmarks or {}
 end
 
---- Toggle bookmark for a theme
----@param theme string Theme name
----@return boolean is_bookmarked Whether theme is now bookmarked
+--- Toggle bookmark for a theme.
+---@param theme string
+---@return boolean is_bookmarked  -- true if now bookmarked, false if removed
 function M.toggle_bookmark(theme)
   local state = M.read()
   state.bookmarks = state.bookmarks or {}
@@ -146,9 +231,11 @@ function M.toggle_bookmark(theme)
     M.write(state)
     return false
   else
-    -- Check max bookmarks limit
     if #state.bookmarks >= constants.MAX_BOOKMARKS then
-      vim.notify(string.format("Max bookmarks (%d) reached!", constants.MAX_BOOKMARKS), vim.log.levels.WARN)
+      vim.notify(
+        string.format("raphael.nvim: Max bookmarks (%d) reached!", constants.MAX_BOOKMARKS),
+        vim.log.levels.WARN
+      )
       return false
     end
     table.insert(state.bookmarks, theme)
@@ -157,9 +244,9 @@ function M.toggle_bookmark(theme)
   end
 end
 
---- Check if theme is bookmarked
----@param theme string Theme name
----@return boolean is_bookmarked
+--- Check if theme is bookmarked.
+---@param theme string
+---@return boolean
 function M.is_bookmarked(theme)
   local bookmarks = M.get_bookmarks()
   for _, name in ipairs(bookmarks) do
@@ -170,13 +257,13 @@ function M.is_bookmarked(theme)
   return false
 end
 
---- Add theme to history (most recent first)
----@param theme string Theme name
+--- Add theme to history (most recent first).
+---@param theme string
 function M.add_to_history(theme)
   local state = M.read()
   state.history = state.history or {}
 
-  -- Remove if already exists
+  -- Remove existing occurrence
   for i, name in ipairs(state.history) do
     if name == theme then
       table.remove(state.history, i)
@@ -184,10 +271,8 @@ function M.add_to_history(theme)
     end
   end
 
-  -- Insert at front
   table.insert(state.history, 1, theme)
 
-  -- Trim to max size
   while #state.history > constants.RECENT_THEMES_MAX do
     table.remove(state.history)
   end
@@ -195,15 +280,15 @@ function M.add_to_history(theme)
   M.write(state)
 end
 
---- Get history (most recent first)
----@return table history Array of theme names
+--- Get history (most recent first).
+---@return string[]
 function M.get_history()
   local state = M.read()
   return state.history or {}
 end
 
---- Increment usage count for theme
----@param theme string Theme name
+--- Increment usage count for theme.
+---@param theme string
 function M.increment_usage(theme)
   local state = M.read()
   state.usage = state.usage or {}
@@ -211,25 +296,25 @@ function M.increment_usage(theme)
   M.write(state)
 end
 
---- Get usage count for theme
----@param theme string Theme name
----@return number count Usage count
+--- Get usage count for theme.
+---@param theme string
+---@return number
 function M.get_usage(theme)
   local state = M.read()
   return (state.usage or {})[theme] or 0
 end
 
---- Get all usage data
----@return table usage Map of theme -> count
+--- Get full usage map.
+---@return table<string, number>
 function M.get_all_usage()
   local state = M.read()
   return state.usage or {}
 end
 
---- Get/set collapsed state for a group
----@param group_key string Group identifier
----@param collapsed boolean|nil If provided, sets the state; otherwise gets it
----@return boolean collapsed Current collapsed state
+--- Get or set collapsed state for a group key.
+---@param group_key string
+---@param collapsed boolean|nil
+---@return boolean collapsed_state
 function M.collapsed(group_key, collapsed)
   local state = M.read()
   state.collapsed = state.collapsed or {}
@@ -242,99 +327,113 @@ function M.collapsed(group_key, collapsed)
   return state.collapsed[group_key] or false
 end
 
---- Get current sort mode
----@return string sort_mode
+--- Get current sort mode ("alpha", "recent", "usage", etc.).
+---@return string
 function M.get_sort_mode()
   local state = M.read()
-  return state.sort_mode or "alphabetical"
+  local mode = state.sort_mode or "alpha"
+  if mode == "alphabetical" then
+    mode = "alpha"
+  end
+  return mode
 end
 
---- Set sort mode
----@param mode string Sort mode
+--- Set current sort mode.
+---@param mode string
 function M.set_sort_mode(mode)
   local state = M.read()
   state.sort_mode = mode
   M.write(state)
 end
 
---- Get auto-apply state
----@return boolean enabled
+--- Get auto-apply flag.
+---@return boolean
 function M.get_auto_apply()
   local state = M.read()
   return state.auto_apply or false
 end
 
---- Set auto-apply state
+--- Set auto-apply flag.
 ---@param enabled boolean
 function M.set_auto_apply(enabled)
   local state = M.read()
-  state.auto_apply = enabled
+  state.auto_apply = enabled and true or false
   M.write(state)
 end
 
---- Push theme to undo stack
----@param theme string Theme name
+-- ────────────────────────────────────────────────────────────────────────
+-- Undo stack helpers
+-- ────────────────────────────────────────────────────────────────────────
+
+--- Push theme onto undo stack.
+---@param theme string
 function M.undo_push(theme)
   local state = M.read()
-  local undo = state.undo_history
+  local undo = state.undo_history or {
+    stack = {},
+    index = 0,
+    max_size = constants.HISTORY_MAX_SIZE,
+  }
 
   -- Remove everything after current index (branching)
   while #undo.stack > undo.index do
     table.remove(undo.stack)
   end
 
-  -- Push new theme
+  -- Remove duplicates from stack (keep most recent position)
+  for i = #undo.stack, 1, -1 do
+    if undo.stack[i] == theme then
+      table.remove(undo.stack, i)
+      if i <= undo.index then
+        undo.index = undo.index - 1
+      end
+    end
+  end
+
   table.insert(undo.stack, theme)
   undo.index = #undo.stack
 
   -- Trim to max size
-  while #undo.stack > undo.max_size do
+  local max_size = undo.max_size or constants.HISTORY_MAX_SIZE
+  while #undo.stack > max_size do
     table.remove(undo.stack, 1)
     undo.index = undo.index - 1
   end
 
+  state.undo_history = undo
   M.write(state)
 end
 
---- Undo to previous theme
----@return string|nil theme Previous theme, or nil if at start
+--- Undo to previous theme.
+---@return string|nil theme
 function M.undo_pop()
   local state = M.read()
   local undo = state.undo_history
-
-  if undo.index > 1 then
-    undo.index = undo.index - 1
-    M.write(state)
-    return undo.stack[undo.index]
+  if not undo or undo.index <= 1 then
+    return nil
   end
 
-  return nil
+  undo.index = undo.index - 1
+  state.undo_history = undo
+  M.write(state)
+
+  return undo.stack[undo.index]
 end
 
---- Redo to next theme
----@return string|nil theme Next theme, or nil if at end
+--- Redo to next theme.
+---@return string|nil theme
 function M.redo_pop()
   local state = M.read()
   local undo = state.undo_history
-
-  if undo.index < #undo.stack then
-    undo.index = undo.index + 1
-    M.write(state)
-    return undo.stack[undo.index]
+  if not undo or undo.index >= #undo.stack then
+    return nil
   end
 
-  return nil
-end
+  undo.index = undo.index + 1
+  state.undo_history = undo
+  M.write(state)
 
---- Get full state (for debugging)
----@return table state
-function M.get_state()
-  return M.read()
-end
-
---- Clear all state (reset to defaults)
-function M.clear()
-  M.write(default_state())
+  return undo.stack[undo.index]
 end
 
 return M
