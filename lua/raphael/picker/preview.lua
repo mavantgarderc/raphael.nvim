@@ -275,6 +275,17 @@ function M.update_code_preview(ctx)
     return
   end
 
+  local theme_under_cursor = nil
+  if ctx.win and vim.api.nvim_win_is_valid(ctx.win) then
+    local ok, line = pcall(vim.api.nvim_get_current_line)
+    if ok and line and line ~= "" then
+      local parsed = require("raphael.picker.render").parse_line_theme(ctx.core, line)
+      theme_under_cursor = parsed
+    end
+  end
+
+  local theme = theme_under_cursor or (ctx.core.state and ctx.core.state.current) or "?"
+
   ensure_code_buf()
 
   local lang_info = samples.get_language_info(current_lang)
@@ -288,7 +299,6 @@ function M.update_code_preview(ctx)
   end
 
   local lines = vim.split(sample_code, "\n")
-  local theme = ctx.core.state.current or "?"
   local header = string.format("[%s] - [%s]", lang_info.display, theme)
 
   vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, vim.list_extend({ header, "" }, lines))
