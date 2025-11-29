@@ -1,7 +1,3 @@
--- lua/raphael/core/samples.lua
---- Gorgeous multi-language code samples for theme preview
---- These get syntax-highlighted in the preview pane using treesitter
-
 local M = {}
 
 M.lua = [[
@@ -352,7 +348,6 @@ main() {
 main "$@"
 ]==]
 
--- Language metadata
 M.languages = {
   { name = "lua", display = "Lua", ft = "lua" },
   { name = "python", display = "Python", ft = "python" },
@@ -364,16 +359,10 @@ M.languages = {
   { name = "sh", display = "Shell", ft = "sh" },
 }
 
---- Get sample code for a language
----@param lang_name string Language name
----@return string sample Sample code
 function M.get_sample(lang_name)
   return M[lang_name] or M.lua
 end
 
---- Get language info by name
----@param lang_name string Language name
----@return table info Language info {name, display, ft}
 function M.get_language_info(lang_name)
   for _, lang in ipairs(M.languages) do
     if lang.name == lang_name then
@@ -383,9 +372,6 @@ function M.get_language_info(lang_name)
   return M.languages[1]
 end
 
---- Get next language in cycle
----@param current_lang string Current language
----@return string lang Next language name
 function M.get_next_language(current_lang)
   for i, lang in ipairs(M.languages) do
     if lang.name == current_lang then
@@ -396,9 +382,6 @@ function M.get_next_language(current_lang)
   return M.languages[1].name
 end
 
---- Get previous language in cycle
----@param current_lang string Current language
----@return string lang Previous language name
 function M.get_previous_language(current_lang)
   for i, lang in ipairs(M.languages) do
     if lang.name == current_lang then
