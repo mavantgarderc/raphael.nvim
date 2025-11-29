@@ -1,4 +1,4 @@
-lua/raphael/0-testfiles/*
+lua/0-testfiles/*
 
 # Compiled Lua sources
 luac.out
