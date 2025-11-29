@@ -1,3 +1,15 @@
+-- lua/raphael/core/samples.lua (or lua/raphael/samples.lua depending on your layout)
+-- Language-specific code samples used by the picker preview.
+--
+-- Responsibilities:
+--   - Provide multi-line sample snippets for various languages (Lua, Python, JS, TS, Rust, Go, Ruby, Shell)
+--   - Provide metadata about each language (name, display label, filetype)
+--   - Offer helpers to:
+--       * get_sample(lang_name)        → sample text for that language
+--       * get_language_info(lang_name) → { name, display, ft }
+--       * get_next_language(name)      → circular next language
+--       * get_previous_language(name)  → circular previous language
+
 local M = {}
 
 M.lua = [[
@@ -348,6 +360,11 @@ main() {
 main "$@"
 ]==]
 
+--- List of languages supported by the preview system.
+--- Each entry:
+---   - name    : internal identifier (key used to look up samples)
+---   - display : human-friendly label
+---   - ft      : Neovim 'filetype' to use for syntax highlighting
 M.languages = {
   { name = "lua", display = "Lua", ft = "lua" },
   { name = "python", display = "Python", ft = "python" },
@@ -359,10 +376,25 @@ M.languages = {
   { name = "sh", display = "Shell", ft = "sh" },
 }
 
+--- Get the sample code string for a given language name.
+---
+--- If the language is unknown, falls back to the Lua sample (M.lua).
+---
+--- @param lang_name string
+--- @return string sample
 function M.get_sample(lang_name)
   return M[lang_name] or M.lua
 end
 
+--- Get metadata for a given language.
+---
+--- Returns a table of the form:
+---   { name = "lua", display = "Lua", ft = "lua" }
+---
+--- If not found, returns the first entry in M.languages.
+---
+--- @param lang_name string
+--- @return table
 function M.get_language_info(lang_name)
   for _, lang in ipairs(M.languages) do
     if lang.name == lang_name then
@@ -372,6 +404,12 @@ function M.get_language_info(lang_name)
   return M.languages[1]
 end
 
+--- Get the next language name in M.languages, wrapping around.
+---
+--- If current_lang is unknown, returns the first language name.
+---
+--- @param current_lang string
+--- @return string next_lang
 function M.get_next_language(current_lang)
   for i, lang in ipairs(M.languages) do
     if lang.name == current_lang then
@@ -382,6 +420,12 @@ function M.get_next_language(current_lang)
   return M.languages[1].name
 end
 
+--- Get the previous language name in M.languages, wrapping around.
+---
+--- If current_lang is unknown, returns the last language name.
+---
+--- @param current_lang string
+--- @return string prev_lang
 function M.get_previous_language(current_lang)
   for i, lang in ipairs(M.languages) do
     if lang.name == current_lang then

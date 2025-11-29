@@ -1,9 +1,14 @@
+-- lua/raphael/core/keymaps_global.lua
+-- Global keymaps (normal-mode):
+--   - <leader>t... for picker, others, auto-toggle, refresh, status, next/prev/random
+
 local M = {}
 
 local themes = require("raphael.themes")
 
 local map = vim.keymap.set
 
+---@param core table
 function M.setup(core)
   local leader = core.config.leader
   local mappings = core.config.mappings or {}

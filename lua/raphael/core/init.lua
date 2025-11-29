@@ -1,3 +1,19 @@
+-- lua/raphael/core/init.lua
+-- Core orchestrator for raphael.nvim (new architecture).
+--
+-- Responsibilities:
+--   - Hold in‑memory state (current/saved/previous theme, config, etc.)
+--   - Coordinate between:
+--       * raphael.themes          (installed + configured themes)
+--       * raphael.core.cache      (persistent JSON state)
+--       * raphael.extras.history  (undo/redo stack)
+--       * raphael.picker.ui       (UI, picker window)
+--   - Provide the public Lua API used by:
+--       * raphael.init            (public entrypoint)
+--       * core.autocmds           (BufEnter/filetype auto-apply)
+--       * core.cmds               (:RaphaelApply, :RaphaelToggleAuto, etc.)
+--       * core.keymaps_global     (leader mappings)
+
 local cache = require("raphael.core.cache")
 local history = require("raphael.extras.history")
 local themes = require("raphael.themes")
@@ -5,8 +21,23 @@ local picker = require("raphael.picker.ui")
 
 local M = {}
 
+--- Runtime configuration (validated by raphael.config.validate()).
+---@type table
 M.config = {}
 
+--- In-memory state mirror of what is persisted via cache.
+--- This is NOT the only source of truth; cache is canonical.
+---@class RaphaelState
+---@field current?  string  -- currently active theme
+---@field saved?    string  -- last manually saved theme
+---@field previous? string  -- theme before current (for quick revert)
+---@field auto_apply boolean -- whether BufEnter/FileType auto-apply is enabled
+---@field bookmarks string[] -- list of bookmarked themes
+---@field history   string[] -- recent themes (newest first)
+---@field usage     table<string, integer> -- usage count per theme
+---@field collapsed table<string, boolean> -- group collapse state
+---@field sort_mode string   -- current sort mode ("alpha", "recent", "usage", or custom)
+---@field undo_history table -- detailed undo stack (managed by extras.history/cache)
 M.state = {
   current = nil,
   saved = nil,
@@ -35,6 +66,10 @@ local function save_state_to_cache()
   cache.write(M.state)
 end
 
+--- Safely apply a colorscheme using :colorscheme.
+--- Performs a basic hl clear / syntax reset to emulate :colorscheme behavior.
+---@param theme string
+---@return boolean ok
 local function apply_colorscheme_raw(theme)
   vim.cmd("hi clear")
   if vim.fn.exists("syntax_on") == 1 then
@@ -53,6 +88,10 @@ local function apply_colorscheme_raw(theme)
   return true
 end
 
+--- Record a manual theme change in usage + recent history + undo stack.
+--- IMPORTANT: This is only for manual actions (picker, commands, keymaps),
+--- not for auto-applies (BufEnter/FileType).
+---@param theme string
 local function record_manual_change(theme)
   if not theme or theme == "" then
     return
@@ -76,6 +115,22 @@ local function record_manual_change(theme)
   history.add(theme)
 end
 
+-- ────────────────────────────────────────────────────────────────────────
+-- Public API
+-- ────────────────────────────────────────────────────────────────────────
+
+--- Setup core orchestrator.
+---
+--- This is typically called once from `require("raphael").setup(opts)`,
+--- after `opts` has been validated by raphael.config.validate().
+---
+--- Responsibilities:
+---   - Store validated config in M.config
+---   - Initialize themes.theme_map and themes.filetype_themes
+---   - Refresh installed themes list
+---   - Load persisted state from cache (current/saved/etc.)
+---   - Apply startup theme (saved theme or default_theme)
+---@param config table
 function M.setup(config)
   M.config = config or {}
 
@@ -99,6 +154,20 @@ function M.setup(config)
   end
 end
 
+--- Apply a theme by name.
+---
+--- Semantics:
+---   - Validates theme availability via raphael.themes.
+---   - Applies colorscheme and calls config.on_apply(theme) on success.
+---   - Updates:
+---       * state.previous (for quick revert)
+---       * state.current
+---       * state.saved (if from_manual is true)
+---       * usage, history, undo stack (if from_manual is true)
+---   - Persists state to cache.
+---
+--- @param theme string         Theme to apply (can be alias-resolved by caller)
+--- @param from_manual boolean? Whether this is a manual change (picker/command/keymap)
 function M.apply(theme, from_manual)
   if not theme or theme == "" then
     vim.notify("raphael: no theme specified", vim.log.levels.WARN)
@@ -132,6 +201,8 @@ function M.apply(theme, from_manual)
   end
 end
 
+--- Persist current state explicitly.
+--- Used by picker to save collapsed/sort_mode changes.
 function M.save_state()
   if not M.state then
     return
@@ -139,6 +210,7 @@ function M.save_state()
   save_state_to_cache()
 end
 
+--- Toggle auto-apply on/off (used by :RaphaelToggleAuto and keymaps).
 function M.toggle_auto()
   M.state.auto_apply = not (M.state.auto_apply == true)
 
@@ -149,6 +221,8 @@ function M.toggle_auto()
   vim.notify(msg, vim.log.levels.INFO)
 end
 
+--- Toggle bookmark for a given theme name.
+---@param theme string
 function M.toggle_bookmark(theme)
   if not theme or theme == "" then
     return
@@ -189,10 +263,17 @@ function M.show_status()
   )
 end
 
+-- TODO: FINISH HELP DOC
 function M.show_help()
   vim.notify("raphael.nvim: see README for usage and keybindings.", vim.log.levels.INFO)
 end
 
+--- Export theme info suitable for embedding into session files.
+--- This returns Vimscript lines that set:
+---   g:raphael_session_theme
+---   g:raphael_session_saved
+---   g:raphael_session_auto
+---@return string
 function M.export_for_session()
   local current = M.state.current or M.config.default_theme
   local saved = M.state.saved or current
@@ -211,6 +292,11 @@ let g:raphael_session_auto = %s
   )
 end
 
+--- Restore theme from session variables (if they exist).
+--- Looks at:
+---   g:raphael_session_theme
+---   g:raphael_session_saved
+---   g:raphael_session_auto
 function M.restore_from_session()
   local session_theme = vim.g.raphael_session_theme
   local session_saved = vim.g.raphael_session_saved
@@ -231,6 +317,9 @@ function M.restore_from_session()
   save_state_to_cache()
 end
 
+--- Add a theme to the lightweight "recent" history (separate from undo stack).
+--- which calls record_manual_change() instead.)
+---@param theme string
 function M.add_to_history(theme)
   if not theme or theme == "" then
     return
@@ -239,6 +328,8 @@ function M.add_to_history(theme)
   M.state.history = cache.get_history()
 end
 
+--- Open the theme picker UI.
+---@param opts table|nil
 function M.open_picker(opts)
   return picker.open(M, opts or {})
 end
