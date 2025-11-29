@@ -1,9 +1,41 @@
+-- lua/raphael/core/cmds.lua
+-- User commands for raphael.nvim:
+--   :RaphaelPicker, :RaphaelApply, :RaphaelToggleAuto, :RaphaelUndo, :RaphaelRedo, etc.
+--
+-- This module is intentionally thin:
+--   - It defines Neovim :commands and delegates all logic to:
+--       * raphael.core           (apply, toggle_auto, open_picker, etc.)
+--       * raphael.themes         (theme discovery / availability)
+--       * raphael.extras.history (undo/redo + stats)
+--       * raphael.picker.ui      (picker UI, palette stats, debug toggles)
+--   - It does NOT own any persistent state.
+
 local M = {}
 
 local themes = require("raphael.themes")
 local picker = require("raphael.picker.ui")
 local history = require("raphael.extras.history")
 
+--- Setup user commands that depend on the core orchestrator.
+---
+--- Commands defined:
+---   - :RaphaelToggleAuto
+---   - :RaphaelPicker
+---   - :RaphaelPickerAll
+---   - :RaphaelApply {theme}
+---   - :RaphaelRefresh
+---   - :RaphaelStatus
+---   - :RaphaelHelp
+---   - :RaphaelDebug
+---   - :RaphaelAnim
+---   - :RaphaelCacheStats
+---   - :RaphaelHistory
+---   - :RaphaelUndo
+---   - :RaphaelRedo
+---   - :RaphaelRandom
+---   - :RaphaelBookmarkToggle
+---
+---@param core table  # usually require("raphael.core")
 function M.setup(core)
   vim.api.nvim_create_user_command("RaphaelToggleAuto", function()
     core.toggle_auto()
