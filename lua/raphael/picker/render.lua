@@ -5,6 +5,7 @@
 --   - Build the list of lines to show in the picker buffer
 --   - Handle:
 --       * grouped vs flat theme_map
+--       * nested groups (tables inside tables) with headers
 --       * bookmarks & recent sections
 --       * sort modes: alpha, recent, usage, custom
 --   - Track header_lines & last_cursor via ctx
@@ -79,9 +80,9 @@ end
 
 --- Debounce helper for render; ensures we don't over-render on fast events.
 ---
----@param ms integer          Debounce delay in milliseconds
----@param fn fun(ctx:table)   Callback to invoke after delay
----@return fun(ctx:table)     Debounced wrapper
+---@param ms integer
+---@param fn fun(ctx:table)
+---@return fun(ctx:table)
 local function debounce(ms, fn)
   local timer = nil
   return function(ctx)
@@ -304,6 +305,83 @@ local function render_internal(ctx)
     end
   end
 
+  local function render_group(group_name, node, depth)
+    if node == nil then
+      return
+    end
+
+    local list_items = {}
+    local map_items = {}
+
+    if type(node) == "table" then
+      if vim.islist(node) then
+        list_items = vim.deepcopy(node)
+      else
+        for k, v in pairs(node) do
+          if type(k) == "number" then
+            table.insert(list_items, v)
+          else
+            map_items[k] = v
+          end
+        end
+      end
+    elseif type(node) == "string" then
+      list_items = { node }
+    else
+      return
+    end
+
+    local leaf_themes = {}
+    local function collect_leaves(n)
+      local t = type(n)
+      if t == "string" then
+        table.insert(leaf_themes, n)
+      elseif t == "table" then
+        if vim.islist(n) then
+          for _, v in ipairs(n) do
+            collect_leaves(v)
+          end
+        else
+          for _, v in pairs(n) do
+            collect_leaves(v)
+          end
+        end
+      end
+    end
+    collect_leaves(node)
+    if #leaf_themes == 0 then
+      return
+    end
+
+    local indent = string.rep("  ", depth)
+    local header_key = group_name
+    local collapsed = ctx.collapsed[header_key] == true
+    local header_icon = collapsed and C.ICON.GROUP_COLLAPSED or C.ICON.GROUP_EXPANDED
+    local summary = string.format("(%d)", #leaf_themes)
+
+    table.insert(lines, string.format("%s%s %s %s", indent, header_icon, group_name, summary))
+    table.insert(ctx.header_lines, #lines)
+
+    if collapsed then
+      return
+    end
+
+    if #list_items > 0 then
+      sort_filtered(list_items)
+      for _, t in ipairs(list_items) do
+        local display = cfg.theme_aliases[t] or t
+        local warning = themes.is_available(t) and "" or C.ICON.WARN
+        local b = bookmarks[t] and C.ICON.BOOKMARK or " "
+        local s = (state.current == t) and C.ICON.CURRENT_ON or C.ICON.CURRENT_OFF
+        table.insert(lines, string.format("%s  %s%s %s %s", indent, warning, b, s, display))
+      end
+    end
+
+    for subname, subnode in pairs(map_items) do
+      render_group(subname, subnode, depth + 1)
+    end
+  end
+
   if not is_display_grouped then
     local flat_candidates = display_map
     local flat_filtered = (search_query == "") and flat_candidates
@@ -319,29 +397,8 @@ local function render_internal(ctx)
       table.insert(lines, string.format("%s%s %s %s", warning, b, s, display))
     end
   else
-    for group, items in pairs(display_map) do
-      local filtered_items = (search_query == "") and items or vim.fn.matchfuzzy(items, search_query, { text = true })
-
-      sort_filtered(filtered_items)
-
-      if #filtered_items > 0 then
-        local header_icon = collapsed[group] and C.ICON.GROUP_COLLAPSED or C.ICON.GROUP_EXPANDED
-        local summary = string.format("(%d)", #items)
-        table.insert(lines, string.format("%s %s %s", header_icon, group, summary))
-        table.insert(ctx.header_lines, #lines)
-
-        if not collapsed[group] then
-          local visible_count = math.max(1, math.floor(#filtered_items))
-          for i = 1, visible_count do
-            local t = filtered_items[i]
-            local display = cfg.theme_aliases[t] or t
-            local warning = themes.is_available(t) and "" or C.ICON.WARN
-            local b = bookmarks[t] and C.ICON.BOOKMARK or " "
-            local s = (state.current == t) and C.ICON.CURRENT_ON or C.ICON.CURRENT_OFF
-            table.insert(lines, string.format("  %s%s %s %s", warning, b, s, display))
-          end
-        end
-      end
+    for group, node in pairs(display_map) do
+      render_group(group, node, 0)
     end
   end
 

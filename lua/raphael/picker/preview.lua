@@ -16,7 +16,7 @@
 local M = {}
 
 local themes = require("raphael.themes")
-local samples = require("raphael.samples")
+local samples = require("raphael.core.samples")
 local C = require("raphael.constants")
 
 -- Palette preview (top mini bar)
