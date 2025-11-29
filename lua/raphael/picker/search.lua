@@ -1,9 +1,13 @@
+-- lua/raphael/picker/search.lua
+-- Search window for Raphael's picker:
+--   - Prompt at bottom of picker
+--   - Live filtering via core.autocmds.search_textchange_autocmd
+--   - Match highlighting using "Search" highlight group
+
 local M = {}
 
 local autocmds = require("raphael.core.autocmds")
 local C = require("raphael.constants")
-
-local ICON = C.ICON
 
 local map = vim.keymap.set
 
@@ -11,6 +15,24 @@ local function trim(s)
   return (s or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
+--- Open search window attached to the picker.
+---
+--- This creates a 1-line prompt window just below the picker, with:
+---   - prompt: ICON.SEARCH
+---   - live updates:
+---       * ctx.search_query updated via set_search_query
+---       * full picker re-render via fns.render()
+---       * match highlighting via SEARCH_MATCH namespace
+---
+---@param ctx table
+---   ctx.buf, ctx.win, ctx.w, ctx.h, ctx.row, ctx.col
+---   ctx.search_query : string
+---   ctx.opts         : picker options
+---   ctx.search_buf   : (will be set)
+---   ctx.search_win   : (will be set)
+---@param fns table
+---   fns.render()      : re-render picker
+---   fns.highlight()   : re-highlight current line
 function M.open(ctx, fns)
   local picker_win = ctx.win
   local picker_buf = ctx.buf
@@ -40,7 +62,7 @@ function M.open(ctx, fns)
   ctx.search_win = search_win
 
   pcall(vim.api.nvim_set_option_value, "buftype", "prompt", { buf = search_buf })
-  vim.fn.prompt_setprompt(search_buf, ICON.SEARCH .. " ")
+  vim.fn.prompt_setprompt(search_buf, C.ICON.SEARCH .. " ")
   pcall(vim.api.nvim_set_current_win, search_win)
   vim.cmd("startinsert")
 
@@ -48,7 +70,7 @@ function M.open(ctx, fns)
 
   autocmds.search_textchange_autocmd(search_buf, {
     trim = trim,
-    ICON_SEARCH = ICON.SEARCH,
+    ICON_SEARCH = C.ICON.SEARCH,
     render = function()
       fns.render()
     end,
@@ -75,7 +97,7 @@ function M.open(ctx, fns)
     end
     local lines = vim.api.nvim_buf_get_lines(ctx.buf, 0, -1, false)
     for i, line in ipairs(lines) do
-      if not line:match("^" .. ICON.GROUP_EXPANDED) and not line:match("^" .. ICON.GROUP_COLLAPSED) then
+      if not line:match("^" .. C.ICON.GROUP_EXPANDED) and not line:match("^" .. C.ICON.GROUP_COLLAPSED) then
         pcall(vim.api.nvim_win_set_cursor, ctx.win, { i, 0 })
         fns.highlight()
         break

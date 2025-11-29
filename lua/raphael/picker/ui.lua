@@ -1,3 +1,9 @@
+-- lua/raphael/picker/ui.lua
+-- Main orchestrator for Raphael's picker:
+--   - Owns picker context (buffers, windows, layout)
+--   - Coordinates render, search, preview, keymaps
+--   - Exposes public API used as require("raphael.picker")
+
 local M = {}
 
 local themes = require("raphael.themes")
@@ -8,11 +14,32 @@ local preview = require("raphael.picker.preview")
 local keymaps = require("raphael.picker.keymaps")
 local bookmarks_mod = require("raphael.picker.bookmarks")
 
+-- Picker instances (to avoid multiple windows per type)
+-- Used to prevent opening multiple pickers of the same "type".
+---@type table<string, boolean>
 local picker_instances = {
   configured = false,
   other = false,
 }
 
+--- Single context table for current picker session.
+---
+--- Fields:
+---   core, state        : raphael.core + core.state table
+---   buf, win           : picker buffer & window
+---   w, h, row, col     : layout (dimensions + position)
+---   picker_type        : "configured" or "other"
+---   opts               : options passed from core.open_picker()
+---   base_title         : base window title ("Raphael - Configured Themes"/"Other Themes")
+---   collapsed          : map group -> boolean
+---   bookmarks          : set of theme_name -> true
+---   header_lines       : array of header line indices
+---   last_cursor        : map group -> last line index
+---   search_query       : current search query string
+---   search_buf, search_win : search prompt buffer & window
+---   flags              : { disable_sorting:boolean, reverse_sorting:boolean, debug:boolean }
+---   instances          : reference to picker_instances
+---@type table
 local ctx = {
   core = nil,
   state = nil,
@@ -45,6 +72,15 @@ local ctx = {
   instances = picker_instances,
 }
 
+--- Internal logger for picker-related events.
+---
+--- Logs if:
+---   - ctx.flags.debug is true, OR
+---   - level is "ERROR" or "WARN"
+---
+---@param level string  "DEBUG"|"INFO"|"WARN"|"ERROR"
+---@param msg   string
+---@param data  any|nil Additional data (shown via vim.inspect)
 local function log(level, msg, data)
   if not ctx.flags.debug and level ~= "ERROR" and level ~= "WARN" then
     return
@@ -57,12 +93,19 @@ local function log(level, msg, data)
   end
 end
 
+--- Save the theme that should be restored when picker closes with revert=true.
+---
+--- Uses:
+---   - ctx.state.current
+---   - g:colors_name
+---   - ctx.state.saved
 local function save_previous_theme()
   local state = ctx.state
   state.previous = state.current or vim.g.colors_name or state.saved
   log("DEBUG", "Previous theme saved", state.previous)
 end
 
+--- Close all picker-related windows (picker + search).
 local function close_picker_windows()
   for _, win in ipairs({ ctx.win, ctx.search_win }) do
     if win and vim.api.nvim_win_is_valid(win) then
@@ -72,6 +115,15 @@ local function close_picker_windows()
   ctx.buf, ctx.win, ctx.search_buf, ctx.search_win = nil, nil, nil, nil
 end
 
+--- Close the picker and optionally revert to the previous theme.
+---
+--- This:
+---   - reverts theme (if revert=true and previous theme is available)
+---   - closes palette + code preview windows
+---   - closes picker/search windows
+---   - resets ctx fields (collapsed/bookmarks/flags/etc.)
+---
+---@param revert boolean
 local function close_picker(revert)
   log("DEBUG", "Closing picker", { revert = revert })
 
@@ -97,6 +149,7 @@ local function close_picker(revert)
   log("DEBUG", "Picker closed successfully")
 end
 
+--- Persist ctx.collapsed into core.state.collapsed and call core.save_state() if present.
 local function update_state_collapsed()
   ctx.state.collapsed = vim.deepcopy(ctx.collapsed)
   if ctx.core and ctx.core.save_state then
@@ -104,10 +157,16 @@ local function update_state_collapsed()
   end
 end
 
+--- Render the picker using the current ctx.
 local function render_picker()
   render.render(ctx)
 end
 
+--- Setup autocmds specifically for the picker buffer.
+---
+--- Hooks:
+---   - CursorMoved: parse line → preview theme → highlight → update code preview
+---   - BufDelete: log + preview.close_all()
 local function setup_autocmds_for_picker()
   autocmds.picker_cursor_autocmd(ctx.buf, {
     parse = function(line)
@@ -132,6 +191,7 @@ local function setup_autocmds_for_picker()
   })
 end
 
+--- Open the search prompt window attached to the picker.
 local function setup_search()
   search.open(ctx, {
     render = render_picker,
@@ -141,6 +201,9 @@ local function setup_search()
   })
 end
 
+--- Build the picker window title based on picker type and sort flags.
+---
+---@return string title
 local function build_title()
   local state = ctx.state
   local core = ctx.core
@@ -151,6 +214,7 @@ local function build_title()
   return ctx.base_title .. " (Sort: " .. suffix .. ")"
 end
 
+--- Open (or reuse) the main picker window and buffer.
 local function open_picker_window()
   ctx.h = math.max(6, math.floor(vim.o.lines * 0.7))
   ctx.w = math.floor(vim.o.columns * 0.35)
@@ -178,6 +242,17 @@ local function open_picker_window()
   })
 end
 
+--- Initialize the picker context from core and opts.
+---
+--- Sets:
+---   - ctx.core, ctx.state
+---   - ctx.opts, ctx.picker_type
+---   - ctx.collapsed, ctx.bookmarks
+---   - header_lines/last_cursor/search_query
+---   - flags (disable_sorting, reverse_sorting)
+---
+---@param core table      # require("raphael.core")
+---@param opts table|nil  # options passed to open_picker()
 local function init_context(core, opts)
   ctx.core = core
   ctx.state = core.state
@@ -198,11 +273,15 @@ local function init_context(core, opts)
   ctx.flags.reverse_sorting = false
 end
 
+--- Toggle internal debug mode for the picker.
+---
+--- When enabled, more messages are logged with prefix [Raphael:DEBUG].
 function M.toggle_debug()
   ctx.flags.debug = not ctx.flags.debug
   vim.notify("raphael picker debug: " .. (ctx.flags.debug and "ON" or "OFF"), vim.log.levels.INFO)
 end
 
+--- Toggle animation flag (currently just flips config.animate.enabled).
 function M.toggle_animations()
   local cfg = ctx.core and ctx.core.config or {}
   cfg.animate = cfg.animate or {}
@@ -210,10 +289,16 @@ function M.toggle_animations()
   vim.notify("raphael picker animations: " .. (cfg.animate.enabled and "ON" or "OFF"), vim.log.levels.INFO)
 end
 
+--- Get cache stats for :RaphaelCacheStats.
+---
+---@return table
 function M.get_cache_stats()
   return preview.get_cache_stats()
 end
 
+--- Get the theme under cursor in the picker, or nil if not available.
+---
+---@return string|nil
 function M.get_current_theme()
   if not ctx.win or not vim.api.nvim_win_is_valid(ctx.win) then
     return nil
@@ -222,10 +307,19 @@ function M.get_current_theme()
   return render.parse_line_theme(ctx.core, line)
 end
 
+--- Update palette preview for a given theme.
+---
+---@param theme string
 function M.update_palette(theme)
   preview.update_palette(ctx, theme)
 end
 
+--- Open the picker UI.
+---
+--- This is the main entrypoint used by core.open_picker().
+---
+---@param core table      # require("raphael.core")
+---@param opts table|nil  # { only_configured = bool, exclude_configured = bool }
 function M.open(core, opts)
   opts = opts or {}
 

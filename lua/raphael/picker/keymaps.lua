@@ -1,3 +1,14 @@
+-- lua/raphael/picker/keymaps.lua
+-- Picker-local keymaps:
+--   - Navigation (j/k, C-j/C-k, gg/G, zt/zz/zb, [g/]g, etc.)
+--   - Actions (<CR>, c, s/S/R, /, b, random, help)
+--   - History (u, <C-r>, H, J, T)
+--   - Sections navigation ([b/ ]b, [r/ ]r, gb, gr, ga)
+--   - Code preview (i, I)
+--
+-- This module DOES NOT own state; it operates on `ctx` and callbacks.
+-- It expects `ctx` to be the live picker context created in picker/ui.lua.
+
 local M = {}
 
 local map = vim.keymap.set
@@ -7,10 +18,14 @@ local C = require("raphael.constants")
 local preview = require("raphael.picker.preview")
 local render = require("raphael.picker.render")
 
-local ICON = C.ICON
-
 local HIGHLIGHT_NS = C.NS.PICKER_CURSOR
 
+--- Highlight the current non-header line using Visual.
+---
+--- Uses C.HL.PICKER_CURSOR (defaults to "Visual") and the PICKER_CURSOR
+--- namespace to draw the highlight.
+---
+---@param ctx table  # picker context: expects ctx.buf, ctx.win
 function M.highlight_current_line(ctx)
   local buf = ctx.buf
   local win = ctx.win
@@ -28,12 +43,12 @@ function M.highlight_current_line(ctx)
   pcall(vim.api.nvim_buf_clear_namespace, buf, HIGHLIGHT_NS, 0, -1)
 
   local line_text = vim.api.nvim_buf_get_lines(buf, cur_line, cur_line + 1, false)[1] or ""
-  if not line_text:match("^" .. ICON.GROUP_EXPANDED) and not line_text:match("^" .. ICON.GROUP_COLLAPSED) then
+  if not line_text:match("^" .. C.ICON.GROUP_EXPANDED) and not line_text:match("^" .. C.ICON.GROUP_COLLAPSED) then
     pcall(
       vim.highlight.range,
       buf,
       HIGHLIGHT_NS,
-      "Visual",
+      C.HL.PICKER_CURSOR,
       { cur_line, 0 },
       { cur_line, -1 },
       { inclusive = false, priority = 100 }
@@ -41,6 +56,25 @@ function M.highlight_current_line(ctx)
   end
 end
 
+--- Attach all picker-local keymaps to ctx.buf.
+---
+--- Context (`ctx`) is expected to have:
+---   - buf, win             : picker buffer & window
+---   - core, state          : require("raphael.core") + core.state
+---   - base_title, opts     : base title string, options table
+---   - collapsed, bookmarks : group collapse map, bookmark set
+---   - header_lines, flags  : header line indices, flags.disable_sorting/reverse_sorting
+---   - instances, picker_type : used to track open pickers (configured/other)
+---
+--- `fns` callbacks:
+---   - fns.close_picker(revert:boolean)
+---   - fns.render()
+---   - fns.update_state_collapsed()
+---   - fns.open_search()
+---
+---@param ctx table
+---@param fns table
+---@return nil
 function M.attach(ctx, fns)
   local buf = ctx.buf
   local win = ctx.win
@@ -165,10 +199,6 @@ function M.attach(ctx, fns)
         return
       end
     end
-    if #ctx.header_lines > 0 then
-      vim.api.nvim_win_set_cursor(win, { ctx.header_lines[#ctx.header_lines], 0 })
-      M.highlight_current_line(ctx)
-    end
   end, { buffer = buf, desc = "Previous group header" })
 
   map("n", "gg", function()
@@ -182,7 +212,7 @@ function M.attach(ctx, fns)
     M.highlight_current_line(ctx)
   end, { buffer = buf, desc = "Go to bottom" })
 
-  map("n", "<C-u>", function()
+  map("n", "<C*u>", function()
     local height = vim.api.nvim_win_get_height(win)
     local cur = vim.api.nvim_win_get_cursor(win)[1]
     local target = math.max(1, cur - math.floor(height / 2))
@@ -665,7 +695,7 @@ function M.attach(ctx, fns)
     end
 
     local lines = {
-      ICON.STATS .. "Theme History:",
+      C.ICON.STATS .. "Theme History:",
       "",
       string.format("Position: %d/%d", stats.position, stats.total),
       string.format("Unique: %d themes", stats.unique_themes),

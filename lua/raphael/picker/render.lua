@@ -1,10 +1,24 @@
+-- lua/raphael/picker/render.lua
+-- Rendering logic for Raphael's theme picker.
+--
+-- Responsibilities:
+--   - Build the list of lines to show in the picker buffer
+--   - Handle:
+--       * grouped vs flat theme_map
+--       * bookmarks & recent sections
+--       * sort modes: alpha, recent, usage, custom
+--   - Track header_lines & last_cursor via ctx
+
 local M = {}
 
 local themes = require("raphael.themes")
 local C = require("raphael.constants")
 
-local ICON = C.ICON
-
+--- Parse a group header line of the form:
+---   "<icon> <group_name> (N)"
+---
+---@param line string
+---@return string|nil group_name
 function M.parse_line_header(line)
   local captured = line:match("^%s*[^%s]+%s+(.+)%s*%(%d+%)%s*$")
   if not captured then
@@ -14,6 +28,17 @@ function M.parse_line_header(line)
   return captured ~= "" and captured or nil
 end
 
+--- Parse a theme name from a picker line, resolving aliases.
+---
+--- Rules:
+---   - If line ends with "(N)" treat as header → nil
+---   - Strip WARN icon
+---   - Try last word as theme, stripping punctuation
+---   - Resolve aliases via core.config.theme_aliases
+---
+---@param core table  # require("raphael.core")
+---@param line string
+---@return string|nil theme
 function M.parse_line_theme(core, line)
   if not line or line == "" then
     return nil
@@ -23,7 +48,7 @@ function M.parse_line_theme(core, line)
     return nil
   end
 
-  line = line:gsub("%s*" .. ICON.WARN, "")
+  line = line:gsub("%s*" .. C.ICON.WARN, "")
 
   local cfg = core.config or {}
   local aliases = cfg.theme_aliases or {}
@@ -52,6 +77,11 @@ function M.parse_line_theme(core, line)
   return nil
 end
 
+--- Debounce helper for render; ensures we don't over-render on fast events.
+---
+---@param ms integer          Debounce delay in milliseconds
+---@param fn fun(ctx:table)   Callback to invoke after delay
+---@return fun(ctx:table)     Debounced wrapper
 local function debounce(ms, fn)
   local timer = nil
   return function(ctx)
@@ -77,6 +107,16 @@ local function debounce(ms, fn)
   end
 end
 
+--- Internal render function (not debounced).
+---
+--- Expects ctx with:
+---   ctx.buf, ctx.win, ctx.core, ctx.state
+---   ctx.collapsed, ctx.bookmarks, ctx.search_query
+---   ctx.header_lines (out), ctx.last_cursor (in/out)
+---   ctx.opts.only_configured / exclude_configured
+---   ctx.flags.disable_sorting, ctx.flags.reverse_sorting
+---
+---@param ctx table
 local function render_internal(ctx)
   local picker_buf = ctx.buf
   local picker_win = ctx.win
@@ -150,6 +190,10 @@ local function render_internal(ctx)
   local disable_sorting = ctx.flags.disable_sorting
   local reverse_sorting = ctx.flags.reverse_sorting
 
+  --- Sort a flat list of theme names according to current sort mode.
+  --- Mutates `filtered` in-place.
+  ---
+  --- @param filtered string[]
   local function sort_filtered(filtered)
     if disable_sorting then
       return
@@ -214,7 +258,7 @@ local function render_internal(ctx)
 
     if #bookmark_filtered > 0 then
       local group = "__bookmarks"
-      local bookmark_icon = collapsed[group] and ICON.GROUP_COLLAPSED or ICON.GROUP_EXPANDED
+      local bookmark_icon = collapsed[group] and C.ICON.GROUP_COLLAPSED or C.ICON.GROUP_EXPANDED
       table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state.bookmarks .. ")")
       table.insert(ctx.header_lines, #lines)
 
@@ -223,9 +267,9 @@ local function render_internal(ctx)
         for i = 1, visible_count do
           local t = bookmark_filtered[i]
           local display = cfg.theme_aliases[t] or t
-          local warning = themes.is_available(t) and "" or ICON.WARN
+          local warning = themes.is_available(t) and "" or C.ICON.WARN
           local b = " "
-          local s = (state.current == t) and ICON.CURRENT_ON or ICON.CURRENT_OFF
+          local s = (state.current == t) and C.ICON.CURRENT_ON or C.ICON.CURRENT_OFF
           table.insert(lines, "  " .. warning .. b .. s .. display)
         end
       end
@@ -242,7 +286,7 @@ local function render_internal(ctx)
 
     if #recent_filtered > 0 then
       local group = "__recent"
-      local recent_icon = collapsed[group] and ICON.GROUP_COLLAPSED or ICON.GROUP_EXPANDED
+      local recent_icon = collapsed[group] and C.ICON.GROUP_COLLAPSED or C.ICON.GROUP_EXPANDED
       table.insert(lines, recent_icon .. " Recent (" .. #state.history .. ")")
       table.insert(ctx.header_lines, #lines)
 
@@ -251,9 +295,9 @@ local function render_internal(ctx)
         for i = 1, visible_count do
           local t = recent_filtered[i]
           local display = cfg.theme_aliases[t] or t
-          local warning = themes.is_available(t) and "" or ICON.WARN
-          local b = bookmarks[t] and ICON.BOOKMARK or " "
-          local s = (state.current == t) and ICON.CURRENT_ON or ICON.CURRENT_OFF
+          local warning = themes.is_available(t) and "" or C.ICON.WARN
+          local b = bookmarks[t] and C.ICON.BOOKMARK or " "
+          local s = (state.current == t) and C.ICON.CURRENT_ON or C.ICON.CURRENT_OFF
           table.insert(lines, "  " .. warning .. b .. s .. display)
         end
       end
@@ -262,26 +306,26 @@ local function render_internal(ctx)
 
   if not is_display_grouped then
     local flat_candidates = display_map
-    local flat_filtered = search_query == "" and flat_candidates
+    local flat_filtered = (search_query == "") and flat_candidates
       or vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
 
     sort_filtered(flat_filtered)
 
     for _, t in ipairs(flat_filtered) do
       local display = cfg.theme_aliases[t] or t
-      local warning = themes.is_available(t) and "" or ICON.WARN
-      local b = bookmarks[t] and ICON.BOOKMARK or " "
-      local s = (state.current == t) and ICON.CURRENT_ON or ICON.CURRENT_OFF
+      local warning = themes.is_available(t) and "" or C.ICON.WARN
+      local b = bookmarks[t] and C.ICON.BOOKMARK or " "
+      local s = (state.current == t) and C.ICON.CURRENT_ON or C.ICON.CURRENT_OFF
       table.insert(lines, string.format("%s%s %s %s", warning, b, s, display))
     end
   else
     for group, items in pairs(display_map) do
-      local filtered_items = search_query == "" and items or vim.fn.matchfuzzy(items, search_query, { text = true })
+      local filtered_items = (search_query == "") and items or vim.fn.matchfuzzy(items, search_query, { text = true })
 
       sort_filtered(filtered_items)
 
       if #filtered_items > 0 then
-        local header_icon = collapsed[group] and ICON.GROUP_COLLAPSED or ICON.GROUP_EXPANDED
+        local header_icon = collapsed[group] and C.ICON.GROUP_COLLAPSED or C.ICON.GROUP_EXPANDED
         local summary = string.format("(%d)", #items)
         table.insert(lines, string.format("%s %s %s", header_icon, group, summary))
         table.insert(ctx.header_lines, #lines)
@@ -291,9 +335,9 @@ local function render_internal(ctx)
           for i = 1, visible_count do
             local t = filtered_items[i]
             local display = cfg.theme_aliases[t] or t
-            local warning = themes.is_available(t) and "" or ICON.WARN
-            local b = bookmarks[t] and ICON.BOOKMARK or " "
-            local s = (state.current == t) and ICON.CURRENT_ON or ICON.CURRENT_OFF
+            local warning = themes.is_available(t) and "" or C.ICON.WARN
+            local b = bookmarks[t] and C.ICON.BOOKMARK or " "
+            local s = (state.current == t) and C.ICON.CURRENT_ON or C.ICON.CURRENT_OFF
             table.insert(lines, string.format("  %s%s %s %s", warning, b, s, display))
           end
         end
@@ -320,6 +364,10 @@ end
 
 local render_debounced = debounce(50, render_internal)
 
+--- Render the picker contents (possibly debounced).
+---
+---@param ctx table
+---@param immediate boolean|nil  If true, do not debounce
 function M.render(ctx, immediate)
   if immediate then
     render_internal(ctx)

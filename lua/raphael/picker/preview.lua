@@ -1,11 +1,25 @@
+-- lua/raphael/picker/preview.lua
+-- Palette preview + (optional) code sample window for Raphael picker.
+--
+-- Exposed API:
+--   - update_palette(ctx, theme)
+--   - preview_theme(ctx, theme)
+--   - load_theme(theme, set_name)      -- raw colorscheme loader
+--   - update_code_preview(ctx)
+--   - toggle_and_iterate_preview(ctx)
+--   - iterate_backward_preview(ctx)
+--   - close_code_preview()
+--   - close_palette()
+--   - close_all()
+--   - get_cache_stats()
+
 local M = {}
 
 local themes = require("raphael.themes")
-local samples = require("raphael.core.samples")
+local samples = require("raphael.samples")
 local C = require("raphael.constants")
 
-local ICON = C.ICON
-
+-- Palette preview (top mini bar)
 local palette_buf, palette_win
 local palette_hl_cache = {}
 
@@ -20,9 +34,14 @@ local PALETTE_HL = {
   "Special",
 }
 
+-- Code sample preview (right side)
 local code_buf, code_win
 local current_lang
 local is_preview_visible = false
+
+-- ────────────────────────────────────────────────────────────────────────
+-- Palette helpers
+-- ────────────────────────────────────────────────────────────────────────
 
 local function get_hl_rgb(name)
   local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
@@ -48,6 +67,7 @@ local function ensure_palette_hl(idx, color_int)
   return key
 end
 
+--- Close the palette preview window (top icons bar), if present.
 function M.close_palette()
   if palette_win and vim.api.nvim_win_is_valid(palette_win) then
     pcall(vim.api.nvim_win_close, palette_win, true)
@@ -55,6 +75,13 @@ function M.close_palette()
   palette_win, palette_buf = nil, nil
 end
 
+--- Update the top palette bar based on the given theme.
+---
+--- Draws a single-line window above the picker, consisting of BLOCK icons
+--- colored by various highlight groups (Normal, Comment, String, etc.)
+---
+---@param ctx table  # picker context
+---@param theme string
 function M.update_palette(ctx, theme)
   if not theme or not themes.is_available(theme) then
     M.close_palette()
@@ -74,7 +101,7 @@ function M.update_palette(ctx, theme)
 
   local blocks = {}
   for i = 1, #PALETTE_HL do
-    blocks[i] = ICON.BLOCK
+    blocks[i] = C.ICON.BLOCK
   end
   local blocks_str = table.concat(blocks, " ")
   local display_w = vim.fn.strdisplaywidth(blocks_str)
@@ -106,7 +133,7 @@ function M.update_palette(ctx, theme)
       if gname then
         local search_pos, occurrence = 1, 0
         while true do
-          local s, e = string.find(bufline, ICON.BLOCK, search_pos, true)
+          local s, e = string.find(bufline, C.ICON.BLOCK, search_pos, true)
           if not s then
             break
           end
@@ -158,6 +185,10 @@ function M.update_palette(ctx, theme)
   end
 end
 
+-- ────────────────────────────────────────────────────────────────────────
+-- Raw theme loader (for previews & revert only)
+-- ────────────────────────────────────────────────────────────────────────
+
 local function load_theme_raw(theme, set_name)
   if not theme or not themes.is_available(theme) then
     return
@@ -194,6 +225,9 @@ local function load_theme_raw(theme, set_name)
   end
 end
 
+--- Preview a theme (apply temporarily, update palette only).
+---@param ctx table
+---@param theme string
 function M.preview_theme(ctx, theme)
   if not theme or not themes.is_available(theme) then
     return
@@ -212,9 +246,16 @@ function M.preview_theme(ctx, theme)
   end
 end
 
+--- Expose raw load_theme for UI revert logic.
+---@param theme string
+---@param set_name boolean
 function M.load_theme(theme, set_name)
   return load_theme_raw(theme, set_name)
 end
+
+-- ────────────────────────────────────────────────────────────────────────
+-- Code sample preview
+-- ────────────────────────────────────────────────────────────────────────
 
 local function ensure_code_buf()
   if code_buf and vim.api.nvim_buf_is_valid(code_buf) then
@@ -226,6 +267,9 @@ local function ensure_code_buf()
   vim.api.nvim_set_option_value("swapfile", false, { buf = code_buf })
 end
 
+--- Update code preview buffer based on current_lang.
+--- Uses the currently active theme from ctx.core.state.current in header.
+---@param ctx table
 function M.update_code_preview(ctx)
   if not is_preview_visible then
     return
@@ -293,6 +337,8 @@ local function get_allowed_langs(core)
   end, samples.languages)
 end
 
+--- Toggle code preview / iterate language forward (used by 'i' mapping).
+---@param ctx table
 function M.toggle_and_iterate_preview(ctx)
   local allowed_langs = get_allowed_langs(ctx.core)
 
@@ -314,6 +360,8 @@ function M.toggle_and_iterate_preview(ctx)
   end
 end
 
+--- Iterate language backward (used by 'I' mapping).
+---@param ctx table
 function M.iterate_backward_preview(ctx)
   if not is_preview_visible then
     return
@@ -333,6 +381,7 @@ function M.iterate_backward_preview(ctx)
   M.update_code_preview(ctx)
 end
 
+--- Close the code preview window if present.
 function M.close_code_preview()
   if code_win and vim.api.nvim_win_is_valid(code_win) then
     pcall(vim.api.nvim_win_close, code_win, true)
@@ -341,11 +390,19 @@ function M.close_code_preview()
   is_preview_visible = false
 end
 
+--- Close both palette + code preview windows.
 function M.close_all()
   M.close_palette()
   M.close_code_preview()
 end
 
+--- Get cache stats for :RaphaelCacheStats.
+---
+--- @return table
+---   {
+---     palette_cache_size = integer,
+---     active_timers      = integer, -- currently always 0
+---   }
 function M.get_cache_stats()
   local palette_size = 0
   for k, _ in pairs(palette_hl_cache) do
