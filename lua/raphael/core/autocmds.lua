@@ -1,44 +1,66 @@
--- lua/raphael/core/autocmds.lua
---- Startup restore + BufEnter filetype auto-apply + session hooks
-
 local M = {}
 
-local cache = require("raphael.core.cache")
-local utils = require("raphael.utils")
-local config = require("raphael.config")
+local themes = require("raphael.themes")
 
---- Setup auto-apply autocmds for filetype switching
-function M.setup_auto_apply()
+function M.setup(core)
   vim.api.nvim_create_autocmd("BufEnter", {
-    group = vim.api.nvim_create_augroup("RaphaelAutoApply", { clear = true }),
     callback = function(ev)
-      if not cache.get_auto_apply() then
+      if not core.state.auto_apply then
         return
       end
 
       local ft = vim.bo[ev.buf].filetype
-      if not ft or ft == "" then
+      local theme = themes.filetype_themes[ft]
+      if theme and themes.is_available(theme) then
+        core.apply(theme, false)
+      else
+        core.apply(core.config.default_theme, false)
+      end
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("LspAttach", {
+    callback = function()
+      vim.api.nvim_set_hl(0, "LspReferenceText", { link = "CursorLine" })
+      vim.api.nvim_set_hl(0, "LspReferenceRead", { link = "CursorLine" })
+      vim.api.nvim_set_hl(0, "LspReferenceWrite", { link = "Visual" })
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("FileType", {
+    callback = function(ev)
+      if not core.state.auto_apply then
         return
       end
 
-      local cfg = config.get()
-      local theme = cfg.filetype_themes[ft]
+      local ft = ev.match
+      local theme_ft = themes.filetype_themes[ft]
 
-      if theme and utils.theme_exists(theme) then
-        -- Apply temporarily (don't save to cache)
-        local ok, err = utils.safe_colorscheme(theme)
-        if not ok then
-          utils.notify("Failed to apply filetype theme: " .. err, vim.log.levels.ERROR, cfg)
+      if theme_ft and themes.is_available(theme_ft) then
+        core.apply(theme_ft, false)
+      elseif theme_ft and not themes.is_available(theme_ft) then
+        vim.notify(
+          string.format("raphael: filetype theme '%s' for %s not available, using default", theme_ft, ft),
+          vim.log.levels.WARN
+        )
+        if themes.is_available(core.config.default_theme) then
+          core.apply(core.config.default_theme, false)
         end
-      elseif theme then
-        utils.notify(string.format("Filetype theme '%s' for %s not found", theme, ft), vim.log.levels.WARN, cfg)
       end
     end,
   })
 end
 
---- Setup CursorMoved autocmd for picker live preview
-function M.setup_picker_cursor(picker_buf, on_cursor_moved)
+function M.picker_cursor_autocmd(picker_buf, cbs)
+  if type(picker_buf) ~= "number" then
+    error("picker_cursor_autocmd: picker_buf must be a buffer number")
+  end
+  cbs = cbs or {}
+  local parse = cbs.parse
+  local preview = cbs.preview
+  local highlight = cbs.highlight
+  local update_preview = cbs.update_preview
+
   vim.api.nvim_create_autocmd("CursorMoved", {
     buffer = picker_buf,
     callback = function()
@@ -47,28 +69,58 @@ function M.setup_picker_cursor(picker_buf, on_cursor_moved)
         return
       end
 
-      if type(on_cursor_moved) == "function" then
-        pcall(on_cursor_moved, line)
+      local theme
+      if type(parse) == "function" then
+        theme = parse(line)
+      end
+      if theme and type(preview) == "function" then
+        preview(theme)
+      end
+      if type(highlight) == "function" then
+        highlight()
+      end
+      if type(update_preview) == "function" then
+        update_preview({ debounced = true })
       end
     end,
   })
 end
 
---- Setup BufDelete autocmd for picker cleanup
-function M.setup_picker_cleanup(picker_buf, on_cleanup)
+function M.picker_bufdelete_autocmd(picker_buf, cbs)
+  if type(picker_buf) ~= "number" then
+    error("picker_bufdelete_autocmd: picker_buf must be a buffer number")
+  end
+  cbs = cbs or {}
+  local log = cbs.log
+  local cleanup = cbs.cleanup
+
   vim.api.nvim_create_autocmd("BufDelete", {
     buffer = picker_buf,
     once = true,
     callback = function()
-      if type(on_cleanup) == "function" then
-        pcall(on_cleanup)
+      if type(log) == "function" then
+        pcall(log, "DEBUG", "Picker buffer deleted, cleaning up")
+      end
+      if type(cleanup) == "function" then
+        pcall(cleanup)
       end
     end,
   })
 end
 
---- Setup TextChanged autocmd for search input
-function M.setup_search_input(search_buf, on_search_changed)
+function M.search_textchange_autocmd(search_buf, cbs)
+  if type(search_buf) ~= "number" then
+    error("search_textchange_autocmd: search_buf must be a buffer number")
+  end
+  cbs = cbs or {}
+  local trim = cbs.trim
+  local ICON_SEARCH = cbs.ICON_SEARCH
+  local render = cbs.render
+  local get_picker_buf = cbs.get_picker_buf
+  local get_picker_opts = cbs.get_picker_opts
+  local ns = cbs.ns
+  local set_search_query = cbs.set_search_query
+
   vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
     buffer = search_buf,
     callback = function()
@@ -78,28 +130,53 @@ function M.setup_search_input(search_buf, on_search_changed)
       end
 
       local joined = table.concat(lines, "\n")
-
-      if type(on_search_changed) == "function" then
-        pcall(on_search_changed, joined)
-      end
-    end,
-  })
-end
-
---- Setup VimEnter autocmd to restore saved theme on startup
-function M.setup_startup_restore()
-  vim.api.nvim_create_autocmd("VimEnter", {
-    group = vim.api.nvim_create_augroup("RaphaelStartup", { clear = true }),
-    once = true,
-    callback = function()
-      local cfg = config.get()
-      if not cfg.persistence.restore_on_startup then
-        return
+      local new_query = joined:gsub("^" .. (ICON_SEARCH or ""), "")
+      if type(trim) == "function" then
+        new_query = trim(new_query)
       end
 
-      local saved = cache.get_saved()
-      if saved and utils.theme_exists(saved) then
-        utils.safe_colorscheme(saved)
+      if type(set_search_query) == "function" then
+        pcall(set_search_query, new_query)
+      end
+
+      if type(render) == "function" then
+        local opts = nil
+        if type(get_picker_opts) == "function" then
+          opts = get_picker_opts()
+        end
+        pcall(render, opts)
+      end
+
+      local pbuf = nil
+      if type(get_picker_buf) == "function" then
+        pbuf = get_picker_buf()
+      end
+
+      if pbuf and vim.api.nvim_buf_is_valid(pbuf) then
+        pcall(vim.api.nvim_buf_clear_namespace, pbuf, ns, 0, -1)
+        if new_query ~= "" and #new_query >= 2 then
+          local ok_plines, picker_lines = pcall(vim.api.nvim_buf_get_lines, pbuf, 0, -1, false)
+          if ok_plines and picker_lines then
+            local query_lower = new_query:lower()
+            for i, line in ipairs(picker_lines) do
+              local start_idx = 1
+              local match_count = 0
+              while match_count < 10 do
+                local s, e = line:lower():find(query_lower, start_idx, true)
+                if not s then
+                  break
+                end
+                pcall(vim.api.nvim_buf_set_extmark, pbuf, ns, i - 1, s - 1, {
+                  end_col = e,
+                  hl_group = "Search",
+                  strict = false,
+                })
+                start_idx = e + 1
+                match_count = match_count + 1
+              end
+            end
+          end
+        end
       end
     end,
   })
