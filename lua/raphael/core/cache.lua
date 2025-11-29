@@ -1,9 +1,22 @@
+-- lua/raphael/core/cache.lua
+--- Read/write persistent state: themes, bookmarks, history, undo stack, etc.
+--- Uses JSON format for human-readability and a single STATE_FILE path.
+---
+--- This module is intentionally "stateless":
+---   - Every helper reads the JSON, mutates, and writes it back.
+---   - The in-memory "authoritative" state lives in raphael.core; this
+---     module is the disk-backed source of truth.
+
 local constants = require("raphael.constants")
 
 local M = {}
 
+-- Internals & Locals
+-- ────────────────────────────────────────────────────────────────────────
+
 local uv = vim.loop
 
+--- Ensure the directory for STATE_FILE exists.
 local function ensure_dir()
   local dir = vim.fn.fnamemodify(constants.STATE_FILE, ":h")
   if vim.fn.isdirectory(dir) == 0 then
@@ -11,6 +24,9 @@ local function ensure_dir()
   end
 end
 
+--- Default state structure (pure, no side effects).
+---
+--- @return table state
 local function default_state()
   return {
     current = nil,
@@ -34,6 +50,14 @@ local function default_state()
   }
 end
 
+--- Normalize and merge decoded JSON into a full state table.
+--- Ensures that:
+---   - All keys exist (even if file is old / partial)
+---   - undo_history is structurally valid
+---   - sort_mode is normalized ("alphabetical" -> "alpha")
+---
+--- @param decoded table|nil
+--- @return table state
 local function normalize_state(decoded)
   local base = default_state()
 
@@ -71,6 +95,12 @@ local function normalize_state(decoded)
   return base
 end
 
+--- Async write helper.
+---
+--- Writes `data` to `path` asynchronously using libuv, and notifies on error.
+---
+--- @param path string  Absolute path to state file
+--- @param data string  JSON-encoded string
 local function async_write(path, data)
   ensure_dir()
 
@@ -93,6 +123,14 @@ local function async_write(path, data)
   end)
 end
 
+-- Core API: full read/write
+-- ────────────────────────────────────────────────────────────────────────
+
+--- Read state from disk (or return defaults if file doesn't exist / is invalid).
+---
+--- This is the canonical entry for reading the on-disk state.
+---
+--- @return table state
 function M.read()
   local file = io.open(constants.STATE_FILE, "r")
   if not file then
@@ -115,6 +153,15 @@ function M.read()
   return normalize_state(decoded)
 end
 
+--- Write full state to disk (async).
+---
+--- This function:
+---   - Normalizes the state (defensive against missing keys)
+---   - Encodes as JSON
+---   - Kicks off an async write to constants.STATE_FILE
+---
+--- @param state table  State table to persist
+--- @return boolean success
 function M.write(state)
   local normalized = normalize_state(state)
 
@@ -128,25 +175,44 @@ function M.write(state)
   return true
 end
 
+--- For debugging only: return current state from disk.
+---
+--- @return table state
 function M.get_state()
   return M.read()
 end
 
+--- Clear everything and reset to defaults (overwrites JSON file).
 function M.clear()
   local state = default_state()
   M.write(state)
 end
 
+-- Convenience helpers (stateless, always go via read/write)
+-- ────────────────────────────────────────────────────────────────────────
+
+--- Get current theme from persistent state.
+---
+--- @return string|nil
 function M.get_current()
   local state = M.read()
   return state.current
 end
 
+--- Get saved theme (manually persisted theme) from persistent state.
+---
+--- @return string|nil
 function M.get_saved()
   local state = M.read()
   return state.saved
 end
 
+--- Set current theme (and optionally mark as saved) in persistent state.
+---
+--- Also updates `previous` to the old current theme.
+---
+--- @param theme string
+--- @param save  boolean
 function M.set_current(theme, save)
   local state = M.read()
   state.previous = state.current
@@ -159,11 +225,22 @@ function M.set_current(theme, save)
   M.write(state)
 end
 
+--- Get bookmarks from persistent state.
+---
+--- @return string[] bookmarks
 function M.get_bookmarks()
   local state = M.read()
   return state.bookmarks or {}
 end
 
+--- Toggle bookmark for a theme in persistent state.
+---
+--- Semantics:
+---   - If theme is already bookmarked, it is removed and returns false.
+---   - Otherwise, it is added (if under MAX_BOOKMARKS) and returns true.
+---
+--- @param theme string
+--- @return boolean is_bookmarked  true if now bookmarked, false if removed or rejected
 function M.toggle_bookmark(theme)
   local state = M.read()
   state.bookmarks = state.bookmarks or {}
@@ -194,6 +271,10 @@ function M.toggle_bookmark(theme)
   end
 end
 
+--- Check if theme is bookmarked in persistent state.
+---
+--- @param theme string
+---@return boolean
 function M.is_bookmarked(theme)
   local bookmarks = M.get_bookmarks()
   for _, name in ipairs(bookmarks) do
@@ -204,6 +285,13 @@ function M.is_bookmarked(theme)
   return false
 end
 
+--- Add theme to history (most recent first) in persistent state.
+---
+--- Ensures:
+---   - The theme is unique in history (removes previous occurrence)
+---   - The list is capped to RECENT_THEMES_MAX
+---
+--- @param theme string
 function M.add_to_history(theme)
   local state = M.read()
   state.history = state.history or {}
@@ -224,11 +312,17 @@ function M.add_to_history(theme)
   M.write(state)
 end
 
+--- Get history (most recent first) from persistent state.
+---
+--- @return string[]
 function M.get_history()
   local state = M.read()
   return state.history or {}
 end
 
+--- Increment usage count for theme in persistent state.
+---
+--- @param theme string
 function M.increment_usage(theme)
   local state = M.read()
   state.usage = state.usage or {}
@@ -236,16 +330,31 @@ function M.increment_usage(theme)
   M.write(state)
 end
 
+--- Get usage count for theme from persistent state.
+---
+--- @param theme string
+--- @return number
 function M.get_usage(theme)
   local state = M.read()
   return (state.usage or {})[theme] or 0
 end
 
+--- Get full usage map from persistent state.
+---
+--- @return table<string, number>
 function M.get_all_usage()
   local state = M.read()
   return state.usage or {}
 end
 
+--- Get or set collapsed state for a group key in persistent state.
+---
+--- If `collapsed` is provided, it sets the value and writes to disk.
+--- Otherwise, it just returns the current collapsed state (default false).
+---
+--- @param group_key string
+--- @param collapsed boolean|nil
+--- @return boolean collapsed_state
 function M.collapsed(group_key, collapsed)
   local state = M.read()
   state.collapsed = state.collapsed or {}
@@ -258,6 +367,11 @@ function M.collapsed(group_key, collapsed)
   return state.collapsed[group_key] or false
 end
 
+--- Get current sort mode ("alpha", "recent", "usage", etc.) from persistent state.
+---
+--- Normalizes legacy "alphabetical" to "alpha".
+---
+--- @return string
 function M.get_sort_mode()
   local state = M.read()
   local mode = state.sort_mode or "alpha"
@@ -267,23 +381,44 @@ function M.get_sort_mode()
   return mode
 end
 
+--- Set current sort mode in persistent state.
+---
+--- @param mode string
 function M.set_sort_mode(mode)
   local state = M.read()
   state.sort_mode = mode
   M.write(state)
 end
 
+--- Get auto-apply flag from persistent state.
+---
+--- @return boolean
 function M.get_auto_apply()
   local state = M.read()
   return state.auto_apply or false
 end
 
+--- Set auto-apply flag in persistent state.
+---
+--- @param enabled boolean
 function M.set_auto_apply(enabled)
   local state = M.read()
   state.auto_apply = enabled and true or false
   M.write(state)
 end
 
+-- Undo stack helpers
+-- ────────────────────────────────────────────────────────────────────────
+
+--- Push theme onto undo stack in persistent state.
+---
+--- Semantics:
+---   - Drops any "future" entries if we've undone (branch cut)
+---   - Removes older duplicates of this theme
+---   - Appends theme and moves index to the end
+---   - Trims stack to max_size, dropping oldest entries
+---
+--- @param theme string
 function M.undo_push(theme)
   local state = M.read()
   local undo = state.undo_history or {
@@ -318,6 +453,12 @@ function M.undo_push(theme)
   M.write(state)
 end
 
+--- Undo to previous theme in persistent state.
+---
+--- Decrements the undo index and returns the new "current" theme from stack.
+--- Returns nil if no further undo is possible.
+---
+--- @return string|nil theme
 function M.undo_pop()
   local state = M.read()
   local undo = state.undo_history
@@ -332,6 +473,12 @@ function M.undo_pop()
   return undo.stack[undo.index]
 end
 
+--- Redo to next theme in persistent state.
+---
+--- Increments the undo index and returns the new "current" theme from stack.
+--- Returns nil if no further redo is possible.
+---
+--- @return string|nil theme
 function M.redo_pop()
   local state = M.read()
   local undo = state.undo_history
