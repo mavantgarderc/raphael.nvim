@@ -1,42 +1,98 @@
+-- lua/raphael/init.lua
+-- Public entrypoint for raphael.nvim:
+--   - setup() with user configuration
+--   - wires global autocmds, commands, and keymaps
+--   - exposes a small public API that forwards to raphael.core
+
 local M = {}
 
 local core = require("raphael.core")
 local config = require("raphael.config")
 
+--- Validated configuration (after config.validate()).
+---
+--- This is set during M.setup() and then used by M.open_picker()
+--- to decide whether the picker is enabled.
+---@type table|nil
 M.config = nil
 
+-- ────────────────────────────────────────────────────────────────────────
+-- Public API (forward to core)
+-- ────────────────────────────────────────────────────────────────────────
+
+--- Apply a theme by name.
+---
+--- This is a thin wrapper over core.apply().
+--- `from_manual` controls whether the change participates in history,
+--- saved theme, etc.
+---
+---@param theme string
+---@param from_manual boolean|nil
 function M.apply(theme, from_manual)
   return core.apply(theme, from_manual)
 end
 
+--- Toggle auto-apply for BufEnter/FileType.
+---
+--- Delegates to core.toggle_auto().
 function M.toggle_auto()
   return core.toggle_auto()
 end
 
+--- Toggle bookmark for a theme.
+---
+--- Delegates to core.toggle_bookmark().
+---
+---@param theme string
 function M.toggle_bookmark(theme)
   return core.toggle_bookmark(theme)
 end
 
+--- Refresh theme list and re-apply current theme.
+---
+--- Delegates to core.refresh_and_reload().
 function M.refresh_and_reload()
   return core.refresh_and_reload()
 end
 
+--- Show current theme status.
+---
+--- Delegates to core.show_status().
 function M.show_status()
   return core.show_status()
 end
 
+--- Export session snippet for Raphael theme persistence.
+---
+--- Delegates to core.export_for_session().
+---
+---@return string
 function M.export_for_session()
   return core.export_for_session()
 end
 
+--- Restore theme from session variables (if present).
+---
+--- Delegates to core.restore_from_session().
 function M.restore_from_session()
   return core.restore_from_session()
 end
 
+--- Add a theme to "recent" history (mostly kept for compatibility).
+---
+--- Delegates to core.add_to_history().
+---
+---@param theme string
 function M.add_to_history(theme)
   return core.add_to_history(theme)
 end
 
+--- Open the theme picker, if enabled in config.
+---
+--- If `enable_picker` is false in the validated config, this emits a
+--- warning and does nothing.
+---
+---@param opts table|nil
 function M.open_picker(opts)
   if not M.config or not M.config.enable_picker then
     vim.notify("raphael: picker disabled in config", vim.log.levels.WARN)
@@ -45,6 +101,28 @@ function M.open_picker(opts)
   return core.open_picker(opts or {})
 end
 
+-- ────────────────────────────────────────────────────────────────────────
+-- Setup
+-- ────────────────────────────────────────────────────────────────────────
+
+--- Setup raphael.nvim with user configuration.
+---
+--- Responsibilities:
+---   1. Validate and normalize user config via raphael.config.validate()
+---   2. Initialize core orchestrator (raphael.core.setup)
+---   3. Attach:
+---        - core.autocmds (if enable_autocmds)
+---        - core.cmds     (if enable_commands)
+---        - core.keymaps_global (if enable_keymaps)
+---
+--- Typical usage:
+---   require("raphael").setup({
+---     default_theme = "kanagawa-paper-edo",
+---     theme_map     = { ... },
+---     icons         = { BOOKMARK = "★ " },
+---   })
+---
+---@param user_config table|nil
 function M.setup(user_config)
   M.config = config.validate(user_config or {})
 
