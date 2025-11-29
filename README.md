@@ -231,7 +231,6 @@ Misc:
 Picker internals (new module paths):
 
 ```vim
-:lua require("raphael.picker.ui").toggle_animations()
 :lua require("raphael.picker.ui").toggle_debug()
 :lua print(vim.inspect(require("raphael.picker.ui").get_cache_stats()))
 ```

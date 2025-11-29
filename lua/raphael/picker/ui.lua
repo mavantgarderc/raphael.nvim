@@ -281,14 +281,6 @@ function M.toggle_debug()
   vim.notify("raphael picker debug: " .. (ctx.flags.debug and "ON" or "OFF"), vim.log.levels.INFO)
 end
 
---- Toggle animation flag (currently just flips config.animate.enabled).
-function M.toggle_animations()
-  local cfg = ctx.core and ctx.core.config or {}
-  cfg.animate = cfg.animate or {}
-  cfg.animate.enabled = not (cfg.animate.enabled == true)
-  vim.notify("raphael picker animations: " .. (cfg.animate.enabled and "ON" or "OFF"), vim.log.levels.INFO)
-end
-
 --- Get cache stats for :RaphaelCacheStats.
 ---
 ---@return table

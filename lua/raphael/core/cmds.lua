@@ -27,7 +27,6 @@ local history = require("raphael.extras.history")
 ---   - :RaphaelStatus
 ---   - :RaphaelHelp
 ---   - :RaphaelDebug
----   - :RaphaelAnim
 ---   - :RaphaelCacheStats
 ---   - :RaphaelHistory
 ---   - :RaphaelUndo
@@ -105,10 +104,6 @@ function M.setup(core)
   vim.api.nvim_create_user_command("RaphaelDebug", function()
     picker.toggle_debug()
   end, { desc = "Toggle picker debug mode" })
-
-  vim.api.nvim_create_user_command("RaphaelAnim", function()
-    picker.toggle_animations()
-  end, { desc = "Toggle picker animations" })
 
   vim.api.nvim_create_user_command("RaphaelCacheStats", function()
     local stats = picker.get_cache_stats()

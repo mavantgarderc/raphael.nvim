@@ -23,7 +23,6 @@ local M = {}
 ---   recent_group     : boolean       -- show/hide "Recent" section in picker
 ---   theme_map        : table|nil     -- list/map/nested; used by raphael.themes
 ---   filetype_themes  : table         -- ft -> theme_name
----   animate          : table         -- { enabled:boolean, duration:number, steps:number }
 ---   sort_mode        : string        -- "alpha"|"recent"|"usage"|custom
 ---   custom_sorts     : table         -- sort_mode -> comparator(a,b) -> boolean
 ---   theme_aliases    : table         -- alias -> real theme name
@@ -49,7 +48,7 @@ M.defaults = {
   default_theme = "kanagawa-paper-ink",
 
   bookmark_group = true,
-  recent_group = false,
+  recent_group = true,
 
   theme_map = nil,
   filetype_themes = {},
@@ -104,7 +103,6 @@ end
 ---       * leader, mappings
 ---       * default_theme, bookmark_group, recent_group
 ---       * theme_map, filetype_themes
----       * animate, sort_mode, custom_sorts
 ---       * theme_aliases, history_max_size
 ---       * sample_preview
 ---       * on_apply
@@ -171,21 +169,6 @@ function M.validate(user)
       end
     end
     cfg.filetype_themes = cleaned
-  end
-
-  if type(cfg.animate) ~= "table" then
-    warn("config.animate must be a table; using defaults")
-    cfg.animate = vim.deepcopy(M.defaults.animate)
-  else
-    if type(cfg.animate.enabled) ~= "boolean" then
-      cfg.animate.enabled = M.defaults.animate.enabled
-    end
-    if type(cfg.animate.duration) ~= "number" or cfg.animate.duration < 0 then
-      cfg.animate.duration = M.defaults.animate.duration
-    end
-    if type(cfg.animate.steps) ~= "number" or cfg.animate.steps < 1 then
-      cfg.animate.steps = M.defaults.animate.steps
-    end
   end
 
   if type(cfg.sort_mode) ~= "string" then
