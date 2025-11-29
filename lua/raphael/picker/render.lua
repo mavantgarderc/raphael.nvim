@@ -1,0 +1,331 @@
+local M = {}
+
+local themes = require("raphael.themes")
+local C = require("raphael.constants")
+
+local ICON = C.ICON
+
+function M.parse_line_header(line)
+  local captured = line:match("^%s*[^%s]+%s+(.+)%s*%(%d+%)%s*$")
+  if not captured then
+    return nil
+  end
+  captured = captured:gsub("^%s+", ""):gsub("%s+$", "")
+  return captured ~= "" and captured or nil
+end
+
+function M.parse_line_theme(core, line)
+  if not line or line == "" then
+    return nil
+  end
+
+  if line:match("%(%d+%)%s*$") then
+    return nil
+  end
+
+  line = line:gsub("%s*" .. ICON.WARN, "")
+
+  local cfg = core.config or {}
+  local aliases = cfg.theme_aliases or {}
+
+  local reverse_aliases = {}
+  for alias, real in pairs(aliases) do
+    reverse_aliases[alias] = real
+  end
+
+  local last = line:match("([%w_%-]+)%s*$")
+  if last and last ~= "" then
+    return reverse_aliases[last] or last
+  end
+
+  for token in line:gmatch("%S+") do
+    last = token
+  end
+
+  if last then
+    last = last:gsub("^[^%w_%-]+", ""):gsub("[^%w_%-]+$", "")
+    if last ~= "" then
+      return reverse_aliases[last] or last
+    end
+  end
+
+  return nil
+end
+
+local function debounce(ms, fn)
+  local timer = nil
+  return function(ctx)
+    if timer then
+      local ok = pcall(function()
+        if timer and not timer:is_closing() then
+          timer:stop()
+          vim.schedule(function()
+            if timer and not timer:is_closing() then
+              timer:close()
+            end
+          end)
+        end
+      end)
+      if not ok then
+      end
+      timer = nil
+    end
+    timer = vim.defer_fn(function()
+      pcall(fn, ctx)
+      timer = nil
+    end, ms)
+  end
+end
+
+local function render_internal(ctx)
+  local picker_buf = ctx.buf
+  local picker_win = ctx.win
+  local core = ctx.core
+  local state = ctx.state
+
+  if not picker_buf or not vim.api.nvim_buf_is_valid(picker_buf) then
+    return
+  end
+
+  local opts = ctx.opts or {}
+  local only_configured = opts.only_configured or false
+  local exclude_configured = opts.exclude_configured or false
+
+  local picker_ns = vim.api.nvim_create_namespace("raphael_picker_content")
+  pcall(vim.api.nvim_buf_clear_namespace, picker_buf, picker_ns, 0, -1)
+
+  if only_configured and exclude_configured then
+    vim.notify("raphael: both only_configured and exclude_configured are true", vim.log.levels.WARN)
+    return
+  end
+
+  local current_group
+  local current_line = 1
+  if picker_win and vim.api.nvim_win_is_valid(picker_win) then
+    local ok, cursor = pcall(vim.api.nvim_win_get_cursor, picker_win)
+    if ok then
+      current_line = cursor[1]
+      local before_lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
+      local line = before_lines[current_line] or ""
+      current_group = M.parse_line_header(line)
+      if not current_group then
+        for i = current_line, 1, -1 do
+          local maybe = M.parse_line_header(before_lines[i])
+          if maybe then
+            current_group = maybe
+            break
+          end
+        end
+      end
+      if current_group then
+        ctx.last_cursor[current_group] = current_line
+      end
+    end
+  end
+
+  local lines = {}
+  ctx.header_lines = {}
+
+  local cfg = core.config
+  local show_bookmarks = cfg.bookmark_group ~= false
+  local show_recent = cfg.recent_group ~= false
+
+  local display_map = vim.deepcopy(themes.theme_map)
+  if exclude_configured then
+    local all_installed = vim.tbl_keys(themes.installed)
+    table.sort(all_installed)
+    local all_configured = themes.get_all_themes()
+    local extras = {}
+    for _, theme in ipairs(all_installed) do
+      if not vim.tbl_contains(all_configured, theme) then
+        table.insert(extras, theme)
+      end
+    end
+    display_map = extras
+  end
+
+  local is_display_grouped = not vim.islist(display_map)
+  local sort_mode = state.sort_mode or cfg.sort_mode or "alpha"
+
+  local disable_sorting = ctx.flags.disable_sorting
+  local reverse_sorting = ctx.flags.reverse_sorting
+
+  local function sort_filtered(filtered)
+    if disable_sorting then
+      return
+    end
+
+    local function cmp_alpha(a, b)
+      if reverse_sorting then
+        return a:lower() > b:lower()
+      end
+      return a:lower() < b:lower()
+    end
+
+    local function cmp_recent(a, b)
+      local idx_a = vim.fn.index(state.history or {}, a) or -1
+      local idx_b = vim.fn.index(state.history or {}, b) or -1
+      if reverse_sorting then
+        return idx_a < idx_b
+      end
+      return idx_a > idx_b
+    end
+
+    local function cmp_usage(a, b)
+      local count_a = (state.usage or {})[a] or 0
+      local count_b = (state.usage or {})[b] or 0
+      if reverse_sorting then
+        return count_a < count_b
+      end
+      return count_a > count_b
+    end
+
+    if sort_mode == "alpha" then
+      table.sort(filtered, cmp_alpha)
+    elseif sort_mode == "recent" then
+      table.sort(filtered, cmp_recent)
+    elseif sort_mode == "usage" then
+      table.sort(filtered, cmp_usage)
+    end
+
+    local custom_sorts = cfg.custom_sorts or {}
+    local custom_func = custom_sorts[sort_mode]
+    if custom_func then
+      table.sort(filtered, custom_func)
+      if reverse_sorting then
+        for i = 1, math.floor(#filtered / 2) do
+          filtered[i], filtered[#filtered - i + 1] = filtered[#filtered - i + 1], filtered[i]
+        end
+      end
+    end
+  end
+
+  local search_query = ctx.search_query or ""
+  local collapsed = ctx.collapsed
+  local bookmarks = ctx.bookmarks
+
+  if show_bookmarks then
+    local bookmark_filtered = {}
+    for _, t in ipairs(state.bookmarks or {}) do
+      if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
+        table.insert(bookmark_filtered, t)
+      end
+    end
+
+    if #bookmark_filtered > 0 then
+      local group = "__bookmarks"
+      local bookmark_icon = collapsed[group] and ICON.GROUP_COLLAPSED or ICON.GROUP_EXPANDED
+      table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state.bookmarks .. ")")
+      table.insert(ctx.header_lines, #lines)
+
+      if not collapsed[group] then
+        local visible_count = math.max(1, math.floor(#bookmark_filtered))
+        for i = 1, visible_count do
+          local t = bookmark_filtered[i]
+          local display = cfg.theme_aliases[t] or t
+          local warning = themes.is_available(t) and "" or ICON.WARN
+          local b = " "
+          local s = (state.current == t) and ICON.CURRENT_ON or ICON.CURRENT_OFF
+          table.insert(lines, "  " .. warning .. b .. s .. display)
+        end
+      end
+    end
+  end
+
+  if show_recent then
+    local recent_filtered = {}
+    for _, t in ipairs(state.history or {}) do
+      if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
+        table.insert(recent_filtered, t)
+      end
+    end
+
+    if #recent_filtered > 0 then
+      local group = "__recent"
+      local recent_icon = collapsed[group] and ICON.GROUP_COLLAPSED or ICON.GROUP_EXPANDED
+      table.insert(lines, recent_icon .. " Recent (" .. #state.history .. ")")
+      table.insert(ctx.header_lines, #lines)
+
+      if not collapsed[group] then
+        local visible_count = math.max(1, math.floor(#recent_filtered))
+        for i = 1, visible_count do
+          local t = recent_filtered[i]
+          local display = cfg.theme_aliases[t] or t
+          local warning = themes.is_available(t) and "" or ICON.WARN
+          local b = bookmarks[t] and ICON.BOOKMARK or " "
+          local s = (state.current == t) and ICON.CURRENT_ON or ICON.CURRENT_OFF
+          table.insert(lines, "  " .. warning .. b .. s .. display)
+        end
+      end
+    end
+  end
+
+  if not is_display_grouped then
+    local flat_candidates = display_map
+    local flat_filtered = search_query == "" and flat_candidates
+      or vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
+
+    sort_filtered(flat_filtered)
+
+    for _, t in ipairs(flat_filtered) do
+      local display = cfg.theme_aliases[t] or t
+      local warning = themes.is_available(t) and "" or ICON.WARN
+      local b = bookmarks[t] and ICON.BOOKMARK or " "
+      local s = (state.current == t) and ICON.CURRENT_ON or ICON.CURRENT_OFF
+      table.insert(lines, string.format("%s%s %s %s", warning, b, s, display))
+    end
+  else
+    for group, items in pairs(display_map) do
+      local filtered_items = search_query == "" and items or vim.fn.matchfuzzy(items, search_query, { text = true })
+
+      sort_filtered(filtered_items)
+
+      if #filtered_items > 0 then
+        local header_icon = collapsed[group] and ICON.GROUP_COLLAPSED or ICON.GROUP_EXPANDED
+        local summary = string.format("(%d)", #items)
+        table.insert(lines, string.format("%s %s %s", header_icon, group, summary))
+        table.insert(ctx.header_lines, #lines)
+
+        if not collapsed[group] then
+          local visible_count = math.max(1, math.floor(#filtered_items))
+          for i = 1, visible_count do
+            local t = filtered_items[i]
+            local display = cfg.theme_aliases[t] or t
+            local warning = themes.is_available(t) and "" or ICON.WARN
+            local b = bookmarks[t] and ICON.BOOKMARK or " "
+            local s = (state.current == t) and ICON.CURRENT_ON or ICON.CURRENT_OFF
+            table.insert(lines, string.format("  %s%s %s %s", warning, b, s, display))
+          end
+        end
+      end
+    end
+  end
+
+  if #lines == 0 then
+    table.insert(lines, "  No themes found")
+  end
+
+  pcall(vim.api.nvim_set_option_value, "modifiable", true, { buf = picker_buf })
+  pcall(vim.api.nvim_buf_set_lines, picker_buf, 0, -1, false, lines)
+  pcall(vim.api.nvim_set_option_value, "modifiable", false, { buf = picker_buf })
+
+  if picker_win and vim.api.nvim_win_is_valid(picker_win) and #lines > 0 then
+    local restore_line = 1
+    if current_group and ctx.last_cursor[current_group] then
+      restore_line = math.max(1, math.min(ctx.last_cursor[current_group], #lines))
+    end
+    pcall(vim.api.nvim_win_set_cursor, picker_win, { restore_line, 0 })
+  end
+end
+
+local render_debounced = debounce(50, render_internal)
+
+function M.render(ctx, immediate)
+  if immediate then
+    render_internal(ctx)
+  else
+    render_debounced(ctx)
+  end
+end
+
+return M
