@@ -8,19 +8,32 @@ Among La Italia's finest painters, Raphael stood out for his harmony in color �
 
 - **Theme Picker**: Interactive floating window to browse and preview configured or other installed themes.
 
-- **Grouped Themes**: Organize themes into groups (e.g., "justice-league", "lantern-corps") with collapse/expand functionality.
+- **Grouped Themes**: Organize themes into groups (e.g., "justice-league", "lantern-corps") with collapse/expand functionality.  
+  Supports **nested groups** in `theme_map` (tables inside tables), with per‑group cursor memory.
 
-- **Auto-Apply by Filetype**: Automatically switch themes based on buffer filetype (e.g., "kanagawa-paper-ink" for Lua).
+- **Auto-Apply by Filetype**: Automatically switch themes based on buffer filetype (e.g., "kanagawa-paper-ink" for Lua).  
+  Auto-applied themes are **temporary** and do not participate in manual history/undo.
 
-- **Persistence**: Saves manually selected themes across sessions; auto-applies are temporary.
+- **Persistence**: Saves manually selected themes across sessions:
+  - `current`, `saved`, `previous` themes
+  - `bookmarks`, `history`, `usage`, `sort_mode`, `collapsed` state  
+    All stored in a single JSON file:
+    `stdpath("data") .. "/raphael/state.json"`.
 
 - **Bookmarks and History**: Bookmark favorites and track recent themes.
+  - Dedicated **Bookmarks** and **Recent** sections at the top of the picker.
+  - Full undo/redo stack with `u`, `<C-r>`, `H`, `J`, `T` in the picker and `:RaphaelUndo` / `:RaphaelRedo` commands.
 
 - **Preview Palette**: Visual color blocks for key highlight groups during selection.
+  - A top mini-bar of colored blocks representing `Normal`, `Comment`, `String`, etc.
+
+- **Sample Code Preview**: Optional right-side floating window showing code samples in multiple languages (Lua, Python, JS, TS, Rust, Go, Ruby, Shell), updating as you move in the picker.
 
 - **Keymaps and Commands**: Leader-based shortcuts and user commands for management.
 
-- **Session Support**: Integrates with session managers for theme restoration.
+- **Session Support**: Integrates with session managers for theme restoration via helpers like `raphael.extras.session`.
+
+- **Configurable Icons**: All icons used in the picker (bookmarks, group arrows, history markers, etc.) are configurable via `opts.icons` (see below).
 
 ## Installation
 
@@ -42,37 +55,33 @@ return {
 
 ### Configuration
 
-Configure in your plugin spec's opts table. Defaults shown below:
+Configure in your plugin spec's opts table. Examples below:
 
 ```lua
-  -- Method I for keymaps
+local raphael = require("raphael")
+
+return {
+  "mavantgarderc/raphael.nvim",
+
   keys = {
-    { "<leader>tp", function() raphael.open_picker({ only_configured = true }) end, desc = "Raphael: Configured themes", },
-    { "<leader>t/", function() raphael.open_picker({ exclude_configured = true }) end, desc = "Raphael: All other themes", },
-    { "<leader>ta", function() raphael.toggle_auto() end, desc = "Raphael: Toggle auto-apply", },
-    { "<leader>tR", function() raphael.refresh_and_reload() end, desc = "Raphael: Refresh themes", },
-    { "<leader>ts", function() raphael.show_status() end, desc = "Raphael: Show status", },
-  },
-  -- Method II for keymaps
-  keys = {
-    { "<leader>tp", raphael.open_picker, desc = "Raphael: Configured themes" },
-    { "<leader>t/", raphael.open_picker, desc = "Raphael: All other themes" },
-    { "<leader>ta", raphael.toggle_auto, desc = "Raphael: Toggle auto-apply" },
+    { "<leader>tp", raphael.open_picker,        desc = "Raphael: Configured themes" },
+    { "<leader>t/", function() raphael.open_picker({ exclude_configured = true }) end, desc = "Raphael: All other themes" },
+    { "<leader>ta", raphael.toggle_auto,        desc = "Raphael: Toggle auto-apply" },
     { "<leader>tR", raphael.refresh_and_reload, desc = "Raphael: Refresh themes" },
-    { "<leader>ts", raphael.show_status, desc = "Raphael: Show status" },
+    { "<leader>ts", raphael.show_status,        desc = "Raphael: Show status" },
   },
 
   opts = {
-    -- Method III for keymaps
     leader = "<leader>t",
     mappings = {
-      picker = "p",
-      next = ">",
+      picker   = "p",
+      next     = ">",
       previous = "<",
-      others = "/",
-      auto = "a",
-      refresh = "R",
-      status = "s",
+      others   = "/",
+      auto     = "a",
+      refresh  = "R",
+      status   = "s",
+      -- ...
     },
 
     theme_aliases = {
@@ -80,90 +89,149 @@ Configure in your plugin spec's opts table. Defaults shown below:
     },
 
     default_theme = "kanagawa-paper-ink",
-    theme_map = {  -- Grouped or flat list of themes
-      pantheon = { ... },
+
+    -- Grouped or flat or nested theme_map
+    theme_map = {
+      pantheon = { "justice-league-batman", "justice-league-superman" },
       kanagawa = { "kanagawa-paper-ink" },
-      -- ...
+
+      prism = {
+        emotional_entities = {
+          "emotional-entities-entity",
+          "emotional-entities-umbrax",
+        },
+        tmnt = {
+          "tmnt-raphael",
+          "tmnt-leonardo",
+        },
+      },
     },
-    filetype_themes = {  -- Auto-apply per filetype
-      -- extension/filetype = "theme"
-      lua = "kanagawa-paper-ink",
+
+    -- Auto-apply per filetype
+    filetype_themes = {
+      lua    = "kanagawa-paper-ink",
       python = "kanagawa-wave",
       -- ...
     },
-  }
+
+    -- Optional right-side code sample preview
+    sample_preview = {
+      enabled       = true,
+      relative_size = 0.5,      -- fraction of picker width (0.1–1.0)
+      languages     = nil,      -- or { "lua", "python", "rust" } to restrict
+    },
+
+    -- Sort modes: "alpha" | "recent" | "usage" | custom
+    sort_mode   = "alpha",
+    custom_sorts = {
+      -- my_sort = function(a, b) return a < b end
+    },
+
+    history_max_size = 13,
+
+    -- Icon overrides (all keys optional)
+    icons = {
+      -- sections
+      -- HEADER           = "🎨 Colorschemes",
+      -- RECENT_HEADER    = "⏱  Recent",
+      -- BOOKMARKS_HEADER = "★  Bookmarks",
+
+      -- markers
+      -- BOOKMARK    = "★ ",
+      -- CURRENT_ON  = "● ",
+      -- CURRENT_OFF = "○ ",
+      -- WARN        = "⚠ ",
+
+      -- groups
+      -- GROUP_EXPANDED  = "▾ ",
+      -- GROUP_COLLAPSED = "▸ ",
+    },
+
+    -- on_apply hook (e.g. refresh lualine)
+    on_apply = function(theme)
+      vim.schedule(function()
+        local ok, lualine = pcall(require, "lualine")
+        if ok then
+          local cfg        = lualine.get_config()
+          cfg.options      = cfg.options or {}
+          cfg.options.theme = "auto"
+          lualine.setup(cfg)
+        end
+      end)
+    end,
+
+    enable_autocmds = true,
+    enable_commands = true,
+    enable_keymaps  = true,
+    enable_picker   = true,
+  },
+}
 ```
 
 ### Keymaps
 
-`<leader>tp`: Open picker for configured themes
+Global (normal mode, with `leader = "<leader>t"`):
 
-`<leader>t/`: Open picker for other installed themes
-
-`<leader>ta`: Toggle auto-apply
-
-`<leader>tR`: Refresh themes and reload current
-
-`<leader>ts`: Show status
-
-`<leader>t<`: Previous theme
-
-`<leader>t>`: Next theme
+- `<leader>tp`: Open picker for configured themes
+- `<leader>t/`: Open picker for other installed themes
+- `<leader>ta`: Toggle auto-apply
+- `<leader>tR`: Refresh themes and reload current
+- `<leader>ts`: Show status
+- `<leader>t<`: Previous theme
+- `<leader>t>`: Next theme
 
 Inside picker:
 
-`<CR>`: Apply theme
+- `<CR>`: Apply theme
+- `/`: Search
+- `b`: Toggle bookmark
+- `c`: Collapse/expand group
+- `q` / `<Esc>`: Cancel and revert to previous theme
 
-`/`: Search
+Navigation & sections:
 
-`b`: Toggle bookmark
+- `<C-j>` / `<C-k>` & `[g` / `]g`: Next/previous header group
+- `[b` / `]b`: Jump to prev/next bookmark (skips bookmarks section when needed)
+- `[r` / `]r`: Jump to prev/next history state (skips recent section)
+- `gg` / `G`: Top / bottom
+- `<C-u>` / `<C-d>`: Half page up/down
+- `zt` / `zz` / `zb`: Scroll current line to top/center/bottom
+- `ga`: Jump to first theme
 
-`c`: Collapse/expand group
+History & random:
 
-`q`/`<Esc>`: Cancel and revert
+- `u` / `<C-r>`: Undo/redo theme change
+- `H`: Show history snapshot
+- `J`: Jump to history position
+- `T`: Show quick stats
+- `r`: Random theme
 
-`<C-j>`/`<C-k>` & `[g`/`]g`: Next/previous header group
+Preview:
 
-`[b`/`]b`: Jump to prev/next bookmark
+- `i` / `I`: Toggle and iterate inline code sample languages
 
-`[r`/`]r`: Jump to prev/next history state
+Misc:
 
-`i`/`I`: Iterate through inline sample codes
-
-`u`/`<C-r>`: Undo/redo theme change
-
-`s`: Change sort of theme list
-
-`S`: Toggle sorting on/off
-
-`R`: Toggle reverse sorting (descending)
-
-`J`: Jump to history position
-
-`T`: Show quick stats
-
-`r`: Random theme
-
-`?`: Show help
+- `?`: Show help
 
 ### Commands
 
-`:RaphaelPicker`: Open configured picker
+- `:RaphaelPicker`: Open configured picker
+- `:RaphaelPickerAll`: Open other themes picker
+- `:RaphaelApply <theme>`: Apply a theme (supports aliases)
+- `:RaphaelToggleAuto`: Toggle auto-apply
+- `:RaphaelRefresh`: Refresh and reload
+- `:RaphaelStatus`: Show status
+- `:RaphaelHelp`: Show help
+- `:RaphaelHistory`: Show theme history
+- `:RaphaelUndo`: Undo last theme change
+- `:RaphaelRedo`: Redo last undone theme change
+- `:RaphaelRandom`: Apply a random theme
 
-`:RaphaelPickerAll`: Open other themes picker
+Picker internals (new module paths):
 
-`:RaphaelApply <theme>`: Apply a theme
-
-`:RaphaelToggleAuto`: Toggle auto-apply
-
-`:RaphaelRefresh`: Refresh and reload
-
-`:RaphaelStatus`: Show status
-
-`:RaphaelHelp`: Show help
-
-`:lua require('raphael.picker').toggle_animations()`: Animation toggle
-
-`:lua require('raphael.picker').toggle_debug()`: Debug mode toggle
-
-`:lua print(vim.inspect(require('raphael.picker').get_cache_stats()))`: Cache Statistics
+```vim
+:lua require("raphael.picker.ui").toggle_animations()
+:lua require("raphael.picker.ui").toggle_debug()
+:lua print(vim.inspect(require("raphael.picker.ui").get_cache_stats()))
+```
