@@ -20,7 +20,7 @@ local render = require("raphael.picker.render")
 
 local HIGHLIGHT_NS = C.NS.PICKER_CURSOR
 
---- Highlight the current non-header line using Visual.
+--- Highlight the current line using Visual
 ---
 --- Uses C.HL.PICKER_CURSOR (defaults to "Visual") and the PICKER_CURSOR
 --- namespace to draw the highlight.
@@ -42,18 +42,16 @@ function M.highlight_current_line(ctx)
   local cur_line = cursor[1] - 1
   pcall(vim.api.nvim_buf_clear_namespace, buf, HIGHLIGHT_NS, 0, -1)
 
-  local line_text = vim.api.nvim_buf_get_lines(buf, cur_line, cur_line + 1, false)[1] or ""
-  if not line_text:match("^" .. C.ICON.GROUP_EXPANDED) and not line_text:match("^" .. C.ICON.GROUP_COLLAPSED) then
-    pcall(
-      vim.highlight.range,
-      buf,
-      HIGHLIGHT_NS,
-      C.HL.PICKER_CURSOR,
-      { cur_line, 0 },
-      { cur_line, -1 },
-      { inclusive = false, priority = 100 }
-    )
-  end
+  -- highlight ALL lines, including headers
+  pcall(
+    vim.highlight.range,
+    buf,
+    HIGHLIGHT_NS,
+    C.HL.PICKER_CURSOR,
+    { cur_line, 0 },
+    { cur_line, -1 },
+    { inclusive = false, priority = 100 }
+  )
 end
 
 --- Attach all picker-local keymaps to ctx.buf.
