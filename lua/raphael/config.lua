@@ -1,7 +1,37 @@
+-- lua/raphael/config.lua
+-- Defaults + validation for raphael.nvim configuration.
+--
+-- Responsibilities:
+--   - Define a single source of truth for all default options (M.defaults)
+--   - Provide a validate(user_opts) function that:
+--       * merges user options with defaults
+--       * normalizes & clamps values
+--       * drops invalid entries
+--       * updates constants.ICON in-place using config.icons overrides
+
 local constants = require("raphael.constants")
 
 local M = {}
 
+--- Default configuration for raphael.nvim.
+---
+--- Fields:
+---   leader           : string
+---   mappings         : table (keys: picker, next, previous, others, auto, refresh, status, [random])
+---   default_theme    : string
+---   bookmark_group   : boolean       -- show/hide "Bookmarks" section in picker
+---   recent_group     : boolean       -- show/hide "Recent" section in picker
+---   theme_map        : table|nil     -- list/map/nested; used by raphael.themes
+---   filetype_themes  : table         -- ft -> theme_name
+---   animate          : table         -- { enabled:boolean, duration:number, steps:number }
+---   sort_mode        : string        -- "alpha"|"recent"|"usage"|custom
+---   custom_sorts     : table         -- sort_mode -> comparator(a,b) -> boolean
+---   theme_aliases    : table         -- alias -> real theme name
+---   history_max_size : integer       -- in-memory undo/redo size (extras/history)
+---   sample_preview   : table         -- code sample preview config
+---   icons            : table         -- icon overrides, merged into constants.ICON
+---   on_apply         : function      -- hook after theme applied
+---   enable_*         : booleans      -- feature toggles
 M.defaults = {
   leader = "<leader>t",
 
@@ -13,6 +43,7 @@ M.defaults = {
     auto = "a",
     refresh = "R",
     status = "s",
+    random = "r",
   },
 
   default_theme = "kanagawa-paper-ink",
@@ -22,12 +53,6 @@ M.defaults = {
 
   theme_map = nil,
   filetype_themes = {},
-
-  animate = {
-    enabled = false,
-    duration = 200,
-    steps = 10,
-  },
 
   sort_mode = "alpha",
   custom_sorts = {},
@@ -71,6 +96,24 @@ local function is_callable(fn)
   return type(fn) == "function"
 end
 
+--- Validate and normalize user configuration.
+---
+--- Responsibilities:
+---   - Deep-merge user opts into M.defaults
+---   - Validate:
+---       * leader, mappings
+---       * default_theme, bookmark_group, recent_group
+---       * theme_map, filetype_themes
+---       * animate, sort_mode, custom_sorts
+---       * theme_aliases, history_max_size
+---       * sample_preview
+---       * on_apply
+---       * enable_* toggles
+---       * icons (merges into constants.ICON)
+---   - Returns a safe, normalized config table used by raphael.core.
+---
+---@param user table|nil  User-provided configuration
+---@return table cfg      Normalized + merged config
 function M.validate(user)
   local cfg = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), user or {})
 
@@ -254,7 +297,6 @@ function M.validate(user)
         end
       end
     end
-
     cfg.icons = icon_table
   end
 
