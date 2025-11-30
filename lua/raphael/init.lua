@@ -101,6 +101,44 @@ function M.open_picker(opts)
   return core.open_picker(opts or {})
 end
 
+--- Get the currently active theme name (or nil).
+---
+---@return string|nil
+function M.get_current_theme()
+  return core.get_current_theme()
+end
+
+--- Get the currently active profile name (or nil).
+---
+---@return string|nil
+function M.get_current_profile()
+  return core.get_current_profile()
+end
+
+--- Get information about the current profile (for statusline, etc.).
+---
+--- @return table  See core.get_profile_info() for structure.
+function M.get_profile_info()
+  return core.get_profile_info()
+end
+
+--- Small helper for statusline components.
+---
+--- Returns a short string like:
+---   "󰉼 kanagawa-paper-edo [work]"
+--- or, if no profile:
+---   "󰉼 kanagawa-paper-edo"
+---
+---@return string
+function M.statusline()
+  local theme = core.get_current_theme() or "none"
+  local profile = core.get_current_profile()
+  if profile then
+    return string.format("󰉼 %s [%s]", theme, profile)
+  end
+  return "󰉼 " .. theme
+end
+
 -- ────────────────────────────────────────────────────────────────────────
 -- Setup
 -- ────────────────────────────────────────────────────────────────────────

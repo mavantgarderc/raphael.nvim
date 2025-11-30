@@ -155,6 +155,19 @@ local function make_effective_config(base, profile_name)
   return effective
 end
 
+--- Determine scope key for bookmarks/quick slots based on config + profile.
+---@return string
+local function get_scope_key()
+  local cfg = M.config or {}
+  if cfg.profile_scoped_state then
+    local profile = M.state.current_profile or cfg.current_profile
+    if type(profile) == "string" and profile ~= "" then
+      return profile
+    end
+  end
+  return "__global"
+end
+
 --- Setup core orchestrator.
 ---
 --- This is typically called once from `require("raphael").setup(opts)`,
@@ -190,6 +203,10 @@ function M.setup(config)
 
   M.config = make_effective_config(M.base_config, requested_profile)
   M.state.current_profile = requested_profile
+
+  M.state.bookmarks = cache.get_bookmarks_table()
+  M.state.quick_slots = cache.get_quick_slots_table()
+
   save_state_to_cache()
 
   themes.filetype_themes = M.config.filetype_themes or {}
@@ -276,21 +293,23 @@ function M.toggle_auto()
   vim.notify(msg, vim.log.levels.INFO)
 end
 
---- Toggle bookmark for a given theme name.
+--- Toggle bookmark for a given theme name (profile-aware if profile_scoped_state=true).
 ---@param theme string
 function M.toggle_bookmark(theme)
   if not theme or theme == "" then
     return
   end
 
-  local is_bookmarked = cache.toggle_bookmark(theme)
+  local scope = get_scope_key()
+  local is_bookmarked = cache.toggle_bookmark(theme, scope)
 
-  M.state.bookmarks = cache.get_bookmarks()
+  M.state.bookmarks = cache.get_bookmarks_table()
 
+  local scope_msg = (scope ~= "__global") and (" in profile '" .. scope .. "'") or ""
   if is_bookmarked then
-    vim.notify("raphael: bookmarked " .. theme, vim.log.levels.INFO)
+    vim.notify("raphael: bookmarked " .. theme .. scope_msg, vim.log.levels.INFO)
   else
-    vim.notify("raphael: removed bookmark " .. theme, vim.log.levels.INFO)
+    vim.notify("raphael: removed bookmark " .. theme .. scope_msg, vim.log.levels.INFO)
   end
 end
 
@@ -356,11 +375,6 @@ let g:raphael_session_auto = %s
   )
 end
 
---- Restore theme from session variables (if they exist).
---- Looks at:
----   g:raphael_session_theme
----   g:raphael_session_saved
----   g:raphael_session_auto
 function M.restore_from_session()
   local session_theme = vim.g.raphael_session_theme
   local session_saved = vim.g.raphael_session_saved
@@ -398,10 +412,10 @@ function M.open_picker(opts)
   return picker.open(M, opts or {})
 end
 
---- Set a quick favorite slot (0–9) to a theme.
+--- Set a quick favorite slot (0–9) to a theme (profile-aware if profile_scoped_state=true).
 ---
---- @param slot  string|number
---- @param theme string
+---@param slot  string|number
+---@param theme string
 function M.set_quick_slot(slot, theme)
   slot = tostring(slot)
   if slot == "" or not theme or theme == "" then
@@ -409,20 +423,25 @@ function M.set_quick_slot(slot, theme)
     return
   end
 
-  cache.set_quick_slot(slot, theme)
-  M.state.quick_slots = cache.get_quick_slots()
+  local scope = get_scope_key()
+  cache.set_quick_slot(slot, theme, scope)
 
-  vim.notify(string.format("raphael: quick slot %s -> %s", slot, theme), vim.log.levels.INFO)
+  M.state.quick_slots = cache.get_quick_slots_table()
+
+  local scope_msg = (scope ~= "__global") and (" in profile '" .. scope .. "'") or ""
+  vim.notify(string.format("raphael: quick slot %s -> %s%s", slot, theme, scope_msg), vim.log.levels.INFO)
 end
 
---- Get a quick favorite slot theme.
+--- Get a quick favorite slot theme (profile-aware if profile_scoped_state=true).
 ---
 --- @param slot string|number
 --- @return string|nil
 function M.get_quick_slot(slot)
   slot = tostring(slot)
-  local slots = M.state.quick_slots or {}
-  return slots[slot]
+  local scope = get_scope_key()
+  local all = M.state.quick_slots or {}
+  local scoped = all[scope] or all.__global or {}
+  return scoped[slot]
 end
 
 --- Switch active profile.
@@ -454,6 +473,10 @@ function M.set_profile(name)
   local effective = make_effective_config(M.base_config, name)
   M.config = effective
   M.state.current_profile = name
+
+  M.state.bookmarks = cache.get_bookmarks_table()
+  M.state.quick_slots = cache.get_quick_slots_table()
+
   save_state_to_cache()
 
   themes.filetype_themes = M.config.filetype_themes or {}
@@ -495,6 +518,65 @@ end
 ---@return string|nil
 function M.get_current_profile()
   return M.state.current_profile or M.config.current_profile
+end
+
+--- Get the currently active theme name (or nil).
+---
+---@return string|nil
+function M.get_current_theme()
+  return M.state.current
+end
+
+--- Get information about the current profile (for statusline, etc.).
+---
+--- Returns a table:
+--- {
+---   name = "work" | nil,
+---   default_theme = "kanagawa-paper-edo" | nil,
+---   has_overrides = {
+---     filetype_themes = boolean,
+---     project_themes  = boolean,
+---     theme_map       = boolean,
+---   },
+--- }
+---
+---@return table
+function M.get_profile_info()
+  local base = M.base_config or {}
+  local profiles = base.profiles or {}
+  local name = M.get_current_profile()
+
+  local info = {
+    name = name,
+    default_theme = nil,
+    has_overrides = {
+      filetype_themes = false,
+      project_themes = false,
+      theme_map = false,
+    },
+  }
+
+  local function has_nonempty_table(t)
+    return type(t) == "table" and next(t) ~= nil
+  end
+
+  if not name then
+    info.default_theme = base.default_theme
+    return info
+  end
+
+  local prof = profiles[name]
+  if type(prof) ~= "table" then
+    info.default_theme = base.default_theme
+    return info
+  end
+
+  info.default_theme = prof.default_theme or base.default_theme
+  info.has_overrides.filetype_themes = has_nonempty_table(prof.filetype_themes)
+  info.has_overrides.project_themes = has_nonempty_table(prof.project_themes)
+  info.has_overrides.theme_map = has_nonempty_table(prof.theme_map)
+
+  return info
 end
 
 return M
