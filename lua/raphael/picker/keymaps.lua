@@ -703,6 +703,14 @@ function M.attach(ctx, fns)
     vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
   end, { buffer = buf, desc = "Show quick stats" })
 
+  map("n", "a", function()
+    if ctx.search_query ~= "" then
+      ctx.search_query = ""
+      fns.render()
+      M.highlight_current_line(ctx)
+    end
+  end, { buffer = buf, desc = "Clear search / show all themes" })
+
   local help_lines = {
     "Raphael Picker - Keybindings:",
     "",
@@ -720,6 +728,7 @@ function M.attach(ctx, fns)
     "  `S`           - Toggle sorting on/off",
     "  `R`           - Toggle reverse sorting (descending)",
     "  `/`           - Search themes",
+    "  `a`           - Clear Search",
     "  `b`           - Toggle bookmark",
     "",
     "History (picker-only):",
