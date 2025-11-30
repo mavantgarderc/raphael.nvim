@@ -8,6 +8,7 @@
 --   - update_code_preview(ctx)
 --   - toggle_and_iterate_preview(ctx)
 --   - iterate_backward_preview(ctx)
+--   - toggle_compare(ctx, candidate_theme) -- compare current vs candidate
 --   - close_code_preview()
 --   - close_palette()
 --   - close_all()
@@ -39,9 +40,19 @@ local code_buf, code_win
 local current_lang
 local is_preview_visible = false
 
--- ────────────────────────────────────────────────────────────────────────
--- Palette helpers
--- ────────────────────────────────────────────────────────────────────────
+local compare_mode = false
+local compare_base_theme = nil
+local compare_candidate_theme = nil
+local compare_active_side = "candidate"
+local active_preview_theme = nil
+
+local function reset_compare_state()
+  compare_mode = false
+  compare_base_theme = nil
+  compare_candidate_theme = nil
+  compare_active_side = "candidate"
+  active_preview_theme = nil
+end
 
 local function get_hl_rgb(name)
   local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
@@ -185,10 +196,6 @@ function M.update_palette(ctx, theme)
   end
 end
 
--- ────────────────────────────────────────────────────────────────────────
--- Raw theme loader (for previews & revert only)
--- ────────────────────────────────────────────────────────────────────────
-
 local function load_theme_raw(theme, set_name)
   if not theme or not themes.is_available(theme) then
     return
@@ -233,12 +240,19 @@ function M.preview_theme(ctx, theme)
     return
   end
 
+  -- In compare mode, moving cursor updates the candidate theme.
+  if compare_mode then
+    compare_candidate_theme = theme
+    compare_active_side = "candidate"
+  end
+
   local ok, err = pcall(load_theme_raw, theme, false)
   if not ok then
     vim.notify("raphael: failed to preview theme: " .. tostring(err), vim.log.levels.ERROR)
     return
   end
 
+  active_preview_theme = theme
   palette_hl_cache = {}
   local ok2, err2 = pcall(M.update_palette, ctx, theme)
   if not ok2 then
@@ -246,16 +260,19 @@ function M.preview_theme(ctx, theme)
   end
 end
 
---- Expose raw load_theme for UI revert logic.
+--- Expose raw load_theme for UI revert logic / compare.
 ---@param theme string
 ---@param set_name boolean
 function M.load_theme(theme, set_name)
-  return load_theme_raw(theme, set_name)
+  local ok, err = pcall(load_theme_raw, theme, set_name)
+  if not ok then
+    return false, err
+  end
+  if not set_name then
+    active_preview_theme = theme
+  end
+  return true
 end
-
--- ────────────────────────────────────────────────────────────────────────
--- Code sample preview
--- ────────────────────────────────────────────────────────────────────────
 
 local function ensure_code_buf()
   if code_buf and vim.api.nvim_buf_is_valid(code_buf) then
@@ -267,29 +284,31 @@ local function ensure_code_buf()
   vim.api.nvim_set_option_value("swapfile", false, { buf = code_buf })
 end
 
---- Update code preview buffer based on current_lang.
---- Uses the currently active theme from ctx.core.state.current in header.
+local function get_active_theme_label(ctx)
+  if compare_mode then
+    if compare_active_side == "base" then
+      return compare_base_theme or "?"
+    else
+      return compare_candidate_theme or "?"
+    end
+  end
+
+  return active_preview_theme
+    or (ctx.core.state and ctx.core.state.current)
+    or "?"
+end
+
+--- Update code preview buffer based on current_lang and preview/compare state.
 ---@param ctx table
 function M.update_code_preview(ctx)
   if not is_preview_visible then
     return
   end
 
-  local theme_under_cursor = nil
-  if ctx.win and vim.api.nvim_win_is_valid(ctx.win) then
-    local ok, line = pcall(vim.api.nvim_get_current_line)
-    if ok and line and line ~= "" then
-      local parsed = require("raphael.picker.render").parse_line_theme(ctx.core, line)
-      theme_under_cursor = parsed
-    end
-  end
-
-  local theme = theme_under_cursor or (ctx.core.state and ctx.core.state.current) or "?"
-
   ensure_code_buf()
 
-  local lang_info = samples.get_language_info(current_lang)
-  local sample_code = samples.get_sample(current_lang)
+  local lang_info = samples.get_language_info(current_lang or "lua")
+  local sample_code = samples.get_sample(current_lang or "lua")
 
   if not sample_code then
     vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, {
@@ -298,10 +317,27 @@ function M.update_code_preview(ctx)
     return
   end
 
-  local lines = vim.split(sample_code, "\n")
-  local header = string.format("[%s] - [%s]", lang_info.display, theme)
+  local theme_label = get_active_theme_label(ctx)
+  local header
+  if compare_mode then
+    header = string.format(
+      "[%s] - compare base=%s | cand=%s | showing=%s",
+      lang_info.display,
+      compare_base_theme or "?",
+      compare_candidate_theme or "?",
+      theme_label or "?"
+    )
+  else
+    header = string.format("[%s] - [%s]", lang_info.display, theme_label or "?")
+  end
 
-  vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, vim.list_extend({ header, "" }, lines))
+  local lines = vim.split(sample_code, "\n")
+  local all = { header, "" }
+  for _, l in ipairs(lines) do
+    table.insert(all, l)
+  end
+
+  vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, all)
   vim.api.nvim_set_option_value("filetype", lang_info.ft, { buf = code_buf })
 
   vim.cmd(string.format("silent! syntax on | syntax enable | setlocal syntax=%s", lang_info.ft))
@@ -391,6 +427,95 @@ function M.iterate_backward_preview(ctx)
   M.update_code_preview(ctx)
 end
 
+--- Toggle compare mode between current theme (base) and candidate under cursor.
+---
+--- Behavior:
+---   - First press:
+---       * base   = ctx.core.state.current
+---       * cand   = candidate_theme
+---       * mode   = compare, showing candidate
+---   - Move cursor: candidate updates automatically via preview_theme()
+---   - Press C again:
+---       * If same candidate: toggle between base ⇄ candidate
+---       * If different candidate: update candidate and show it
+---
+---@param ctx table
+---@param candidate_theme string
+function M.toggle_compare(ctx, candidate_theme)
+  if not candidate_theme or not themes.is_available(candidate_theme) then
+    vim.notify("raphael: candidate theme not available for compare", vim.log.levels.WARN)
+    return
+  end
+
+  local base = (ctx.core.state and ctx.core.state.current)
+    or vim.g.colors_name
+    or ctx.core.config.default_theme
+
+  if not base or not themes.is_available(base) then
+    vim.notify("raphael: no valid current theme to compare against", vim.log.levels.WARN)
+    return
+  end
+
+  -- Ensure preview window is visible and language selected.
+  if not is_preview_visible then
+    local allowed_langs = get_allowed_langs(ctx.core)
+    current_lang = current_lang or allowed_langs[1] or "lua"
+    open_code_window(ctx)
+  end
+
+  if not compare_mode then
+    compare_mode = true
+    compare_base_theme = base
+    compare_candidate_theme = candidate_theme
+    compare_active_side = "candidate"
+
+    local ok, err = pcall(load_theme_raw, candidate_theme, false)
+    if not ok then
+      vim.notify("raphael: failed to enter compare mode: " .. tostring(err), vim.log.levels.ERROR)
+      reset_compare_state()
+      return
+    end
+    active_preview_theme = candidate_theme
+  else
+    if candidate_theme ~= compare_candidate_theme then
+      compare_candidate_theme = candidate_theme
+      compare_active_side = "candidate"
+      local ok, err = pcall(load_theme_raw, candidate_theme, false)
+      if not ok then
+        vim.notify("raphael: failed to update candidate theme: " .. tostring(err), vim.log.levels.ERROR)
+        return
+      end
+      active_preview_theme = candidate_theme
+    else
+      if compare_active_side == "candidate" then
+        compare_active_side = "base"
+        if compare_base_theme and themes.is_available(compare_base_theme) then
+          local ok, err = pcall(load_theme_raw, compare_base_theme, false)
+          if not ok then
+            vim.notify("raphael: failed to show base theme: " .. tostring(err), vim.log.levels.ERROR)
+            return
+          end
+          active_preview_theme = compare_base_theme
+        end
+      else
+        compare_active_side = "candidate"
+        if compare_candidate_theme and themes.is_available(compare_candidate_theme) then
+          local ok, err = pcall(load_theme_raw, compare_candidate_theme, false)
+          if not ok then
+            vim.notify("raphael: failed to show candidate theme: " .. tostring(err), vim.log.levels.ERROR)
+            return
+          end
+          active_preview_theme = compare_candidate_theme
+        end
+      end
+    end
+  end
+
+  palette_hl_cache = {}
+  M.update_palette(ctx, active_preview_theme)
+  M.update_code_preview(ctx)
+end
+
 --- Close the code preview window if present.
 function M.close_code_preview()
   if code_win and vim.api.nvim_win_is_valid(code_win) then
@@ -398,6 +523,7 @@ function M.close_code_preview()
   end
   code_win = nil
   is_preview_visible = false
+  reset_compare_state()
 end
 
 --- Close both palette + code preview windows.

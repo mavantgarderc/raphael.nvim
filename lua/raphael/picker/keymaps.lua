@@ -4,7 +4,7 @@
 --   - Actions (<CR>, c, s/S/R, /, b, random, help)
 --   - History (u, <C-r>, H, J, T)
 --   - Sections navigation ([b/ ]b, [r/ ]r, gb, gr, ga)
---   - Code preview (i, I)
+--   - Code preview (i, I, C)
 --
 -- This module DOES NOT own state; it operates on `ctx` and callbacks.
 -- It expects `ctx` to be the live picker context created in picker/ui.lua.
@@ -871,6 +871,7 @@ function M.attach(ctx, fns)
     "  `r`           - Apply random theme",
     "  `i`           - Show Code Sample, Iterate languages forward",
     "  `I`           - Iterate languages backward",
+    "  `C`           - Mark/compare candidate with current theme (toggle)",
     "",
     "Other:",
     "  `q`/`<Esc>`   - Quit (revert theme)",
@@ -889,6 +890,24 @@ function M.attach(ctx, fns)
     map("n", "I", function()
       preview.iterate_backward_preview(ctx)
     end, { buffer = buf, silent = true, noremap = true, desc = "Previous code sample language" })
+
+    map("n", "C", function()
+      local hdr = parse_current_header()
+      if hdr then
+        vim.notify("Cannot compare on a group header", vim.log.levels.WARN)
+        return
+      end
+      local theme = parse_current_theme()
+      if not theme then
+        vim.notify("No theme on this line to compare", vim.log.levels.WARN)
+        return
+      end
+      if not core.state.current then
+        vim.notify("No active theme to compare against", vim.log.levels.WARN)
+        return
+      end
+      preview.toggle_compare(ctx, theme)
+    end, { buffer = buf, silent = true, noremap = true, desc = "Compare with current theme" })
   end
 end
 
