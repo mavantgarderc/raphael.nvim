@@ -87,12 +87,104 @@ M.defaults = {
   enable_picker = true,
 }
 
+local SIMPLE_TYPE_SCHEMA = {
+  leader = "string",
+  mappings = "table",
+  default_theme = "string",
+
+  bookmark_group = "boolean",
+  recent_group = "boolean",
+
+  theme_map = { "table", "nil" },
+  filetype_themes = "table",
+
+  sort_mode = "string",
+  custom_sorts = "table",
+
+  theme_aliases = "table",
+
+  history_max_size = "number",
+
+  sample_preview = "table",
+
+  icons = { "table", "nil" },
+
+  on_apply = "function",
+
+  enable_autocmds = "boolean",
+  enable_commands = "boolean",
+  enable_keymaps = "boolean",
+  enable_picker = "boolean",
+}
+
+local KNOWN_KEYS = {}
+for k in pairs(M.defaults) do
+  KNOWN_KEYS[k] = true
+end
+for k in pairs(SIMPLE_TYPE_SCHEMA) do
+  KNOWN_KEYS[k] = true
+end
+
 local function warn(msg)
   vim.notify("raphael: " .. msg, vim.log.levels.WARN)
 end
 
 local function is_callable(fn)
   return type(fn) == "function"
+end
+
+local function type_matches(val, expected)
+  if type(expected) == "string" then
+    return type(val) == expected
+  end
+  if type(expected) == "table" then
+    local t = type(val)
+    for _, e in ipairs(expected) do
+      if t == e then
+        return true
+      end
+    end
+    return false
+  end
+  return true
+end
+
+local function apply_schema(cfg, user)
+  user = user or {}
+
+  for key in pairs(user) do
+    if not KNOWN_KEYS[key] then
+      warn(string.format("Unknown config key '%s'; ignoring (not used by raphael)", tostring(key)))
+    end
+  end
+
+  for key, expected in pairs(SIMPLE_TYPE_SCHEMA) do
+    local val = cfg[key]
+    local default_val = M.defaults[key]
+
+    local allows_nil = default_val == nil
+      and type(expected) == "table"
+      and vim.tbl_contains(expected, "nil")
+
+    if val == nil then
+      if default_val ~= nil then
+        cfg[key] = vim.deepcopy(default_val)
+      elseif not allows_nil then
+        warn(string.format("config.%s is nil; keeping nil (no default)", key))
+      end
+    else
+      if not type_matches(val, expected) then
+        warn(
+          string.format(
+            "config.%s has wrong type (got %s); using default",
+            key,
+            type(val)
+          )
+        )
+        cfg[key] = vim.deepcopy(default_val)
+      end
+    end
+  end
 end
 
 --- Validate and normalize user configuration.
@@ -114,6 +206,8 @@ end
 ---@return table cfg      Normalized + merged config
 function M.validate(user)
   local cfg = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), user or {})
+
+  apply_schema(cfg, user or {})
 
   if type(cfg.leader) ~= "string" or cfg.leader == "" then
     warn("config.leader must be a non-empty string; using default")
@@ -262,11 +356,6 @@ function M.validate(user)
       end
       cfg[field] = M.defaults[field]
     end
-  end
-
-  if cfg.icons ~= nil and type(cfg.icons) ~= "table" then
-    warn("config.icons must be a table; ignoring")
-    cfg.icons = {}
   end
 
   do
