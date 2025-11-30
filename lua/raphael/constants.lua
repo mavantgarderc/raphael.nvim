@@ -40,10 +40,6 @@ M.RECENT_THEMES_MAX = 12
 ---@type integer
 M.MAX_BOOKMARKS = 50
 
--- ────────────────────────────────────────────────────────────────────────
--- Icons (Nerd Font recommended)
--- ────────────────────────────────────────────────────────────────────────
-
 --- Icon set used across the picker and status messages.
 --- These values are the defaults; users may override any subset via
 --- `require("raphael").setup({ icons = { KEY = "…" } })`, and config.validate()
@@ -68,7 +64,7 @@ M.ICON = {
 
   UNDO_ICON = "󰓕",
   REDO_ICON = "󰓗",
-  HISTORY = "󰋚",
+  HISTORY = "󰋚 ",
 }
 
 --- Namespaces used for extmarks in the picker UI.

@@ -153,6 +153,9 @@ return {
       -- ...
     },
 
+    -- indentation spaces before each layer
+    group_indent = 2,
+
     -- Match by directory prefix (longest prefix wins).
     -- Use absolute paths or paths with ~; they’re normalized.
     project_themes = {

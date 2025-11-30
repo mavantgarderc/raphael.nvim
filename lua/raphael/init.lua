@@ -16,10 +16,6 @@ local config = require("raphael.config")
 ---@type table|nil
 M.config = nil
 
--- ────────────────────────────────────────────────────────────────────────
--- Public API (forward to core)
--- ────────────────────────────────────────────────────────────────────────
-
 --- Apply a theme by name.
 ---
 --- This is a thin wrapper over core.apply().

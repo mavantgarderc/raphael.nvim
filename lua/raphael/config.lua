@@ -95,6 +95,8 @@ M.defaults = {
     languages = nil,
   },
 
+  group_indent = 2,
+
   icons = vim.deepcopy(constants.ICON),
 
   on_apply = function(theme)
@@ -144,6 +146,8 @@ local SIMPLE_TYPE_SCHEMA = {
   history_max_size = "number",
 
   sample_preview = "table",
+
+  group_indent = "number",
 
   icons = { "table", "nil" },
 
@@ -259,6 +263,16 @@ function M.validate(user)
         warn(string.format("config.%s must be a boolean; using default", field))
       end
       cfg[field] = M.defaults[field]
+    end
+  end
+
+  if type(cfg.group_indent) ~= "number" then
+    cfg.group_indent = M.defaults.group_indent
+  else
+    cfg.group_indent = math.floor(cfg.group_indent)
+    if cfg.group_indent < 0 or cfg.group_indent > 8 then
+      warn("config.group_indent must be between 0 and 8; using default")
+      cfg.group_indent = M.defaults.group_indent
     end
   end
 

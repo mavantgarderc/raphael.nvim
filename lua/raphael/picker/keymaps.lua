@@ -176,6 +176,73 @@ function M.go_out_group(ctx)
   end
 end
 
+--- Move cursor to the header line of the group under cursor (if any).
+---
+---@param ctx table
+local function jump_to_current_group_header(ctx)
+  local win = ctx.win
+  local buf = ctx.buf
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
+  local cur = vim.api.nvim_win_get_cursor(win)
+  local row = cur[1]
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  if #lines == 0 then
+    return
+  end
+
+  local line = lines[row] or ""
+  if render.parse_line_header(line) then
+    return
+  end
+
+  for i = row, 1, -1 do
+    local maybe = render.parse_line_header(lines[i] or "")
+    if maybe then
+      vim.api.nvim_win_set_cursor(win, { i, 0 })
+      M.highlight_current_line(ctx)
+      return
+    end
+  end
+end
+
+--- Jump to the currently applied theme (state.current) inside the picker.
+---
+---@param ctx table
+local function jump_to_current_theme(ctx)
+  local win = ctx.win
+  local buf = ctx.buf
+  local state = ctx.state
+
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
+  local current = state.current
+  if not current or current == "" then
+    return
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for i, line in ipairs(lines) do
+    local theme = render.parse_line_theme(ctx.core, line)
+    if theme == current then
+      vim.api.nvim_win_set_cursor(win, { i, 0 })
+      vim.cmd("normal! zz")
+      M.highlight_current_line(ctx)
+      return
+    end
+  end
+end
+
 --- Attach all picker-local keymaps to ctx.buf.
 ---
 --- Context (`ctx`) is expected to have:
@@ -221,6 +288,7 @@ function M.attach(ctx, fns)
     ctx.collapsed[group] = not ctx.collapsed[group]
     fns.update_state_collapsed()
     fns.render()
+    jump_to_current_group_header(ctx)
   end
 
   local function update_title()
@@ -536,6 +604,10 @@ function M.attach(ctx, fns)
       fns.render()
     end
   end, { buffer = buf, desc = "Toggle bookmark" })
+
+  map("n", "dd", function()
+    jump_to_current_theme(ctx)
+  end, { buffer = buf, desc = "Jump to current theme" })
 
   map("n", "]b", function()
     if not next(ctx.bookmarks) then
@@ -935,6 +1007,7 @@ function M.attach(ctx, fns)
     "  `/`           - Search themes",
     "  `a`           - Clear Search",
     "  `b`           - Toggle bookmark",
+    "  `dd`          - Jump to current theme",
     "",
     "History (picker-only):",
     "  `u`           - Undo theme change",
