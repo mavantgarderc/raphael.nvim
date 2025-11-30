@@ -8,6 +8,8 @@ local M = {}
 
 local autocmds = require("raphael.core.autocmds")
 local C = require("raphael.constants")
+local keymaps = require("raphael.picker.keymaps")
+local render = require("raphael.picker.render")
 
 local map = vim.keymap.set
 
@@ -27,6 +29,7 @@ end
 ---@param ctx table
 ---   ctx.buf, ctx.win, ctx.w, ctx.h, ctx.row, ctx.col
 ---   ctx.search_query : string
+---   ctx.search_scope : string|nil
 ---   ctx.opts         : picker options
 ---   ctx.search_buf   : (will be set)
 ---   ctx.search_win   : (will be set)
@@ -62,7 +65,25 @@ function M.open(ctx, fns)
   ctx.search_win = search_win
 
   pcall(vim.api.nvim_set_option_value, "buftype", "prompt", { buf = search_buf })
-  vim.fn.prompt_setprompt(search_buf, C.ICON.SEARCH .. " ")
+
+  local function update_prompt()
+    vim.fn.prompt_setprompt(search_buf, C.ICON.SEARCH .. " ")
+  end
+
+  local function update_scope_visual()
+    local title = nil
+    if ctx.search_scope and ctx.search_scope ~= "" then
+      title = string.format("[scope: %s]", ctx.search_scope)
+    end
+    pcall(vim.api.nvim_win_set_config, search_win, {
+      title = title,
+      title_pos = "center",
+    })
+  end
+
+  update_prompt()
+  update_scope_visual()
+
   pcall(vim.api.nvim_set_current_win, search_win)
   vim.cmd("startinsert")
 
@@ -105,6 +126,37 @@ function M.open(ctx, fns)
     end
   end
 
+  local function current_group_header()
+    local win = ctx.win
+    local buf = ctx.buf
+    if not win or not vim.api.nvim_win_is_valid(win) then
+      return nil
+    end
+    if not buf or not vim.api.nvim_buf_is_valid(buf) then
+      return nil
+    end
+    local ok_cur, cursor = pcall(vim.api.nvim_win_get_cursor, win)
+    if not ok_cur then
+      return nil
+    end
+    local row = cursor[1]
+    local all = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local line = all[row] or ""
+    local hdr = render.parse_line_header(line)
+    if not hdr then
+      for i = row, 1, -1 do
+        hdr = render.parse_line_header(all[i] or "")
+        if hdr then
+          break
+        end
+      end
+    end
+    if hdr == "Bookmarks" or hdr == "Recent" then
+      return nil
+    end
+    return hdr
+  end
+
   map("i", "<C-w>", function()
     local ok_line, line = pcall(vim.api.nvim_buf_get_lines, search_buf, 0, 1, false)
     if not ok_line or not line or not line[1] then
@@ -132,15 +184,27 @@ function M.open(ctx, fns)
   end, { buffer = search_buf })
 
   map("i", "<C-l>", function()
+    local hdr = current_group_header()
+    if hdr then
+      ctx.search_scope = hdr
+      update_scope_visual()
+      fns.render()
+    end
     keymaps.go_in_group(ctx)
   end, { buffer = search_buf })
 
   map("i", "<C-h>", function()
+    if ctx.search_scope ~= nil then
+      ctx.search_scope = nil
+      update_scope_visual()
+      fns.render()
+    end
     keymaps.go_out_group(ctx)
   end, { buffer = search_buf })
 
   map("i", "<Esc>", function()
     ctx.search_query = ""
+    ctx.search_scope = nil
     fns.render()
     if ctx.search_win and vim.api.nvim_win_is_valid(ctx.search_win) then
       pcall(vim.api.nvim_win_close, ctx.search_win, true)

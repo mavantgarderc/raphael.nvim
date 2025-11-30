@@ -825,8 +825,9 @@ function M.attach(ctx, fns)
   end, { buffer = buf, desc = "Show quick stats" })
 
   map("n", "a", function()
-    if ctx.search_query ~= "" then
+    if ctx.search_query ~= "" or ctx.search_scope ~= nil then
       ctx.search_query = ""
+      ctx.search_scope = nil
       fns.render()
       M.highlight_current_line(ctx)
     end

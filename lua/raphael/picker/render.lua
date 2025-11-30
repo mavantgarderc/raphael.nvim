@@ -32,19 +32,19 @@ end
 --- Parse a theme name from a picker line, resolving aliases.
 ---
 --- Rules:
----   - If line ends with "(N)" treat as header → nil
----   - Strip WARN icon
----   - Try last word as theme, stripping punctuation
----   - Resolve aliases via core.config.theme_aliases
+--- - If line ends with "(N)" treat as header → nil
+--- - Strip WARN icon
+--- - Try last word as theme, stripping punctuation
+--- - Resolve aliases via core.config.theme_aliases
 ---
----@param core table  # require("raphael.core")
+---@param core table # require("raphael.core")
 ---@param line string
 ---@return string|nil theme
 function M.parse_line_theme(core, line)
   if not line or line == "" then
     return nil
   end
-
+  -- Header lines end with "(N)"
   if line:match("%(%d+%)%s*$") then
     return nil
   end
@@ -112,7 +112,9 @@ end
 ---
 --- Expects ctx with:
 ---   ctx.buf, ctx.win, ctx.core, ctx.state
----   ctx.collapsed, ctx.bookmarks, ctx.search_query
+---   ctx.collapsed, ctx.bookmarks
+---   ctx.search_query : string|nil
+---   ctx.search_scope : string|nil
 ---   ctx.header_lines (out), ctx.last_cursor (in/out)
 ---   ctx.opts.only_configured / exclude_configured
 ---   ctx.flags.disable_sorting, ctx.flags.reverse_sorting
@@ -143,8 +145,8 @@ local function render_internal(ctx)
   local current_group
   local current_line = 1
   if picker_win and vim.api.nvim_win_is_valid(picker_win) then
-    local ok, cursor = pcall(vim.api.nvim_win_get_cursor, picker_win)
-    if ok then
+    local ok_cur, cursor = pcall(vim.api.nvim_win_get_cursor, picker_win)
+    if ok_cur then
       current_line = cursor[1]
       local before_lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
       local line = before_lines[current_line] or ""
@@ -194,7 +196,7 @@ local function render_internal(ctx)
   --- Sort a flat list of theme names according to current sort mode.
   --- Mutates `filtered` in-place.
   ---
-  --- @param filtered string[]
+  ---@param filtered string[]
   local function sort_filtered(filtered)
     if disable_sorting then
       return
@@ -246,6 +248,8 @@ local function render_internal(ctx)
   end
 
   local search_query = ctx.search_query or ""
+  local search_scope = ctx.search_scope
+  local has_search = (search_query ~= "") or (search_scope ~= nil)
   local collapsed = ctx.collapsed
   local bookmarks = ctx.bookmarks
 
@@ -382,43 +386,71 @@ local function render_internal(ctx)
     end
   end
 
-  if search_query ~= "" then
+  if has_search then
     local flat_candidates
     if is_display_grouped then
       flat_candidates = {}
       local seen = {}
 
-      local function collect_flat(node)
+      local function path_has_scope(path)
+        if not search_scope or search_scope == "" then
+          return true
+        end
+        for _, name in ipairs(path) do
+          if name == search_scope then
+            return true
+          end
+        end
+        return false
+      end
+
+      local function collect_flat(node, path)
         local t = type(node)
         if t == "string" then
-          if not seen[node] then
+          if path_has_scope(path) and not seen[node] then
             table.insert(flat_candidates, node)
             seen[node] = true
           end
         elseif t == "table" then
           if vim.islist(node) then
             for _, v in ipairs(node) do
-              collect_flat(v)
+              collect_flat(v, path)
             end
           else
-            for _, v in pairs(node) do
-              collect_flat(v)
+            for k, v in pairs(node) do
+              if type(k) == "string" then
+                table.insert(path, k)
+                collect_flat(v, path)
+                path[#path] = nil
+              else
+                collect_flat(v, path)
+              end
             end
           end
         end
       end
 
-      collect_flat(display_map)
+      collect_flat(display_map, {})
     else
       flat_candidates = display_map
     end
 
-    local flat_filtered = vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
+    local flat_filtered
+    if search_query == "" then
+      flat_filtered = flat_candidates
+    else
+      -- Fuzzy search similar to Telescope, using builtin matchfuzzy.
+      flat_filtered = vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
+    end
 
     sort_filtered(flat_filtered)
 
+    local header_label = "Results"
+    if search_scope and search_scope ~= "" then
+      header_label = string.format("Results [%s]", search_scope)
+    end
     local results_count = #flat_filtered
-    table.insert(lines, string.format("Results: (%d)", results_count))
+    table.insert(lines, string.format("%s (%d)", header_label, results_count))
 
     for _, t in ipairs(flat_filtered) do
       local display = cfg.theme_aliases[t] or t
