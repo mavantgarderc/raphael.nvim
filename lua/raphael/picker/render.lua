@@ -53,7 +53,6 @@ function M.parse_line_theme(core, line)
 
   local cfg = core.config or {}
   local aliases = cfg.theme_aliases or {}
-
   local reverse_aliases = {}
   for alias, real in pairs(aliases) do
     reverse_aliases[alias] = real
@@ -383,15 +382,19 @@ local function render_internal(ctx)
     end
   end
 
-  if not is_display_grouped or search_query ~= "" then
+  if search_query ~= "" then
     local flat_candidates
     if is_display_grouped then
       flat_candidates = {}
+      local seen = {}
 
       local function collect_flat(node)
         local t = type(node)
         if t == "string" then
-          table.insert(flat_candidates, node)
+          if not seen[node] then
+            table.insert(flat_candidates, node)
+            seen[node] = true
+          end
         elseif t == "table" then
           if vim.islist(node) then
             for _, v in ipairs(node) do
@@ -410,14 +413,12 @@ local function render_internal(ctx)
       flat_candidates = display_map
     end
 
-    local flat_filtered
-    if search_query == "" then
-      flat_filtered = flat_candidates
-    else
-      flat_filtered = vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
-    end
+    local flat_filtered = vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
 
     sort_filtered(flat_filtered)
+
+    local results_count = #flat_filtered
+    table.insert(lines, string.format("Results: (%d)", results_count))
 
     for _, t in ipairs(flat_filtered) do
       local display = cfg.theme_aliases[t] or t
@@ -427,13 +428,26 @@ local function render_internal(ctx)
       table.insert(lines, string.format("%s%s %s %s", warning, b, s, display))
     end
   else
-    for group, node in pairs(display_map) do
-      render_group(group, node, 0)
+    if not is_display_grouped then
+      local flat_candidates = display_map
+      local flat_filtered = flat_candidates
+      sort_filtered(flat_filtered)
+      for _, t in ipairs(flat_filtered) do
+        local display = cfg.theme_aliases[t] or t
+        local warning = themes.is_available(t) and "" or C.ICON.WARN
+        local b = bookmarks[t] and C.ICON.BOOKMARK or " "
+        local s = (state.current == t) and C.ICON.CURRENT_ON or C.ICON.CURRENT_OFF
+        table.insert(lines, string.format("%s%s %s %s", warning, b, s, display))
+      end
+    else
+      for group, node in pairs(display_map) do
+        render_group(group, node, 0)
+      end
     end
   end
 
   if #lines == 0 then
-    table.insert(lines, "  No themes found")
+    table.insert(lines, " No themes found")
   end
 
   pcall(vim.api.nvim_set_option_value, "modifiable", true, { buf = picker_buf })
