@@ -39,7 +39,7 @@ local history = require("raphael.extras.history")
 function M.setup(core)
   vim.api.nvim_create_user_command("RaphaelToggleAuto", function()
     core.toggle_auto()
-  end, { desc = "Toggle auto-apply by filetype" })
+  end, { desc = "Toggle auto-apply by filetype/project" })
 
   vim.api.nvim_create_user_command("RaphaelPicker", function()
     core.open_picker({ only_configured = true })
@@ -96,7 +96,7 @@ function M.setup(core)
 
   vim.api.nvim_create_user_command("RaphaelStatus", function()
     core.show_status()
-  end, { desc = "Show current theme status" })
+  end, { desc = "Show current theme/profile status" })
 
   vim.api.nvim_create_user_command("RaphaelHelp", function()
     core.show_help()
@@ -168,61 +168,134 @@ function M.setup(core)
     end
   end, { desc = "Toggle bookmark for the theme under the cursor" })
 
-  vim.api.nvim_create_user_command("RaphaelProfile", function(opts)
-    local name = opts.args
-    local profiles = (core.config and core.config.profiles) or {}
+  local function list_profiles()
+    local base_cfg = core.base_config or {}
+    local cfg = core.config or {}
+    local profiles = base_cfg.profiles or {}
+    local current = core.get_current_profile and core.get_current_profile() or nil
 
-    if not name or name == "" then
+    local function has_nonempty_table(t)
+      return type(t) == "table" and next(t) ~= nil
+    end
+
+    local function has_overrides_for(name)
+      if name == "base" then
+        return has_nonempty_table(base_cfg.filetype_themes)
+          or has_nonempty_table(base_cfg.project_themes)
+          or has_nonempty_table(base_cfg.theme_map)
+      end
+      local prof = profiles[name]
+      if type(prof) ~= "table" then
+        return false
+      end
+      return has_nonempty_table(prof.filetype_themes)
+        or has_nonempty_table(prof.project_themes)
+        or has_nonempty_table(prof.theme_map)
+    end
+
+    local names = {}
+    for pname, _ in pairs(profiles) do
+      table.insert(names, pname)
+    end
+    table.sort(names)
+
+    local lines = { "raphael profiles:", "" }
+
+    local base_mark_cur = current == nil and "*" or ""
+    local base_mark_ovr = has_overrides_for("base") and "+" or ""
+    table.insert(lines, string.format("  - base%s%s", base_mark_cur, base_mark_ovr))
+
+    for _, pname in ipairs(names) do
+      local marks = ""
+      if pname == current then
+        marks = marks .. "*"
+      end
+      if has_overrides_for(pname) then
+        marks = marks .. "+"
+      end
+      table.insert(lines, string.format("  - %s%s", pname, marks))
+    end
+
+    table.insert(lines, "")
+    table.insert(lines, "Legend: * current | + overrides (filetype/project/theme_map)")
+
+    vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
+  end
+
+  vim.api.nvim_create_user_command("RaphaelProfile", function(opts)
+    local args = vim.trim(opts.args or "")
+    local bang = opts.bang
+
+    local base_cfg = core.base_config or {}
+    local profiles = (base_cfg and base_cfg.profiles) or {}
+
+    if args == "" then
       if not profiles or vim.tbl_isempty(profiles) then
         vim.notify("raphael: no profiles configured", vim.log.levels.INFO)
         return
       end
-
-      local current = core.get_current_profile and core.get_current_profile() or nil
-      local names = {}
-      for pname, _ in pairs(profiles) do
-        table.insert(names, pname)
-      end
-      table.sort(names)
-
-      local lines = { "raphael profiles:", "" }
-      for _, pname in ipairs(names) do
-        local mark = (pname == current) and " *" or ""
-        table.insert(lines, string.format("  - %s%s", pname, mark))
-      end
-      if not current then
-        table.insert(lines, "")
-        table.insert(lines, "Current: base (no profile)")
-      end
-
-      vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
+      list_profiles()
       return
     end
+
+    local parts = vim.split(args, "%s+")
+    local name = parts[1]
+    local subcmd = parts[2]
 
     if name == "base" or name == "default" then
-      if core.set_profile then
-        core.set_profile(nil)
-      else
-        vim.notify("raphael: core.set_profile not available", vim.log.levels.ERROR)
+      name = nil
+    end
+
+    if subcmd == "edit" then
+      if not core.get_profile_config then
+        vim.notify("raphael: core.get_profile_config not available", vim.log.levels.ERROR)
+        return
       end
+
+      local cfg = core.get_profile_config(name)
+      if not cfg then
+        vim.notify("raphael: unknown profile for edit: " .. tostring(name or "base"), vim.log.levels.WARN)
+        return
+      end
+
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
+      vim.api.nvim_set_option_value("buftype", "nofile", { buf = buf })
+
+      local label = name or "base"
+      vim.api.nvim_buf_set_name(buf, "RaphaelProfile:" .. label)
+
+      local header = string.format("-- Raphael effective profile config: %s", label)
+      local body = vim.split(vim.inspect(cfg), "\n")
+      table.insert(body, 1, header)
+
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, body)
+      vim.api.nvim_set_option_value("filetype", "lua", { buf = buf })
+
+      vim.api.nvim_win_set_buf(0, buf)
       return
     end
 
-    if not profiles[name] then
+    local apply_default = not bang
+
+    if name ~= nil and type(profiles[name]) ~= "table" then
       vim.notify(string.format("raphael: unknown profile '%s'", name), vim.log.levels.WARN)
       return
     end
 
     if core.set_profile then
-      core.set_profile(name)
+      core.set_profile(name, apply_default)
     else
       vim.notify("raphael: core.set_profile not available", vim.log.levels.ERROR)
     end
   end, {
-    nargs = "?",
+    nargs = "*",
+    bang = true,
     complete = function(ArgLead)
-      local profiles = (core.config and core.config.profiles) or {}
+      local base_cfg = core.base_config or {}
+      local profiles = base_cfg.profiles or {}
       local names = {}
+
       for pname, _ in pairs(profiles) do
         table.insert(names, pname)
       end
@@ -242,7 +315,7 @@ function M.setup(core)
       end
       return res
     end,
-    desc = "Switch Raphael theme profile",
+    desc = "Switch Raphael theme profile (:RaphaelProfile[!] [name] [edit])",
   })
 end
 
