@@ -186,11 +186,13 @@ return {
 
     profiles = {
       work = {
-        default_theme = "kanagawa-paper-ink",
-        -- you can also override filetype_themes/project_themes per profile
+        default_theme = "kanagawa-paper-edot",
+        filetype_themes = { lua = "kanagawa-paper-edo" },
+        project_themes  = { ["~/clients/bigcorp"] = "detox-ink" },
       },
       night = {
-        default_theme = "detox-ink",
+        default_theme   = "detox-ink",
+        filetype_themes = { lua = "detox-ink" },
       },
       presentation = {
         default_theme = "kanagawa-paper-obsidian",

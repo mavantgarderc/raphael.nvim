@@ -34,6 +34,7 @@ local history = require("raphael.extras.history")
 ---   - :RaphaelRandom
 ---   - :RaphaelBookmarkToggle
 ---   - :RaphaelProfile [name] [edit]
+---   - :RaphaelProfileInfo [name]
 ---
 ---@param core table  # usually require("raphael.core")
 function M.setup(core)
@@ -275,7 +276,7 @@ function M.setup(core)
       return
     end
 
-    local apply_default = not bang -- :RaphaelProfile! name => don't apply default theme
+    local apply_default = not bang
 
     if name ~= nil and type(profiles[name]) ~= "table" then
       vim.notify(string.format("raphael: unknown profile '%s'", name), vim.log.levels.WARN)
@@ -315,6 +316,125 @@ function M.setup(core)
       return res
     end,
     desc = "Switch Raphael theme profile (:RaphaelProfile[!] [name] [edit])",
+  })
+
+  local function diff_table(base_tbl, prof_tbl, path, out)
+    path = path or ""
+    out = out or {}
+
+    if type(base_tbl) ~= "table" or type(prof_tbl) ~= "table" then
+      return out
+    end
+
+    local seen = {}
+
+    for k, v in pairs(base_tbl) do
+      seen[k] = true
+      local new_path = path == "" and tostring(k) or (path .. "." .. tostring(k))
+      local ov = prof_tbl[k]
+      if ov == nil then
+        table.insert(out, string.format("- %s: removed (base=%s)", new_path, vim.inspect(v)))
+      else
+        if type(v) == "table" and type(ov) == "table" then
+          diff_table(v, ov, new_path, out)
+        elseif vim.inspect(v) ~= vim.inspect(ov) then
+          table.insert(out, string.format("~ %s: base=%s, profile=%s", new_path, vim.inspect(v), vim.inspect(ov)))
+        end
+      end
+    end
+
+    for k, v in pairs(prof_tbl) do
+      if not seen[k] then
+        local new_path = path == "" and tostring(k) or (path .. "." .. tostring(k))
+        table.insert(out, string.format("+ %s: profile=%s", new_path, vim.inspect(v)))
+      end
+    end
+
+    return out
+  end
+
+  vim.api.nvim_create_user_command("RaphaelProfileInfo", function(opts)
+    local base_cfg = core.base_config or {}
+    local profiles = base_cfg.profiles or {}
+    local name = vim.trim(opts.args or "")
+
+    if name == "" then
+      name = core.get_current_profile and core.get_current_profile() or nil
+    elseif name == "base" or name == "default" then
+      name = nil
+    end
+
+    if name ~= nil and type(profiles[name]) ~= "table" then
+      vim.notify(string.format("raphael: unknown profile '%s'", name), vim.log.levels.WARN)
+      return
+    end
+
+    if not core.get_profile_config then
+      vim.notify("raphael: core.get_profile_config not available", vim.log.levels.ERROR)
+      return
+    end
+
+    local base_eff = core.get_profile_config(nil) or base_cfg
+    local prof_eff = core.get_profile_config(name)
+    if not prof_eff then
+      vim.notify("raphael: no effective config for profile " .. tostring(name or "base"), vim.log.levels.WARN)
+      return
+    end
+
+    local diff_lines = diff_table(base_eff, prof_eff)
+    local label = name or "base"
+
+    if #diff_lines == 0 then
+      vim.notify(string.format("raphael: profile '%s' has no differences vs base", label), vim.log.levels.INFO)
+      return
+    end
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
+    vim.api.nvim_set_option_value("buftype", "nofile", { buf = buf })
+
+    vim.api.nvim_buf_set_name(buf, "RaphaelProfileInfo:" .. label)
+
+    local header = {
+      string.format("-- Raphael profile diff vs base: %s", label),
+      "-- Legend: + added | - removed | ~ changed",
+      "",
+    }
+
+    local lines = {}
+    vim.list_extend(lines, header)
+    vim.list_extend(lines, diff_lines)
+
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.api.nvim_set_option_value("filetype", "lua", { buf = buf })
+    vim.api.nvim_win_set_buf(0, buf)
+  end, {
+    nargs = "?",
+    complete = function(ArgLead)
+      local base_cfg = core.base_config or {}
+      local profiles = base_cfg.profiles or {}
+      local names = {}
+
+      for pname, _ in pairs(profiles) do
+        table.insert(names, pname)
+      end
+      table.sort(names)
+      table.insert(names, 1, "base")
+
+      if not ArgLead or ArgLead == "" then
+        return names
+      end
+
+      local res = {}
+      local needle = ArgLead:lower()
+      for _, n in ipairs(names) do
+        if n:lower():find(needle, 1, true) then
+          table.insert(res, n)
+        end
+      end
+      return res
+    end,
+    desc = "Show diff of profile vs base (:RaphaelProfileInfo [name])",
   })
 end
 
