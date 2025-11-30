@@ -114,7 +114,7 @@ end
 ---   ctx.collapsed, ctx.bookmarks (set: theme -> true)
 ---   ctx.search_query : string|nil
 ---   ctx.search_scope : string|nil
----   ctx.header_lines (out), ctx.last_cursor (in/out)
+---   ctx.header_lines (out), ctx.last_cursor (in/out), ctx.last_line (in/out)
 ---   ctx.opts.only_configured / exclude_configured
 ---   ctx.flags.disable_sorting, ctx.flags.reverse_sorting
 ---
@@ -143,14 +143,24 @@ local function render_internal(ctx)
 
   local current_group
   local current_line = 1
+  local current_theme
+
   if picker_win and vim.api.nvim_win_is_valid(picker_win) then
     local ok_cur, cursor = pcall(vim.api.nvim_win_get_cursor, picker_win)
     if ok_cur then
       current_line = cursor[1]
+      ctx.last_line = current_line
+
       local before_lines = vim.api.nvim_buf_get_lines(picker_buf, 0, -1, false)
       local line = before_lines[current_line] or ""
-      current_group = M.parse_line_header(line)
-      if not current_group then
+
+      current_theme = M.parse_line_theme(core, line)
+
+      local header_name = M.parse_line_header(line)
+      if header_name then
+        current_group = header_name
+        ctx.last_cursor[current_group] = current_line
+      else
         for i = current_line, 1, -1 do
           local maybe = M.parse_line_header(before_lines[i])
           if maybe then
@@ -158,9 +168,6 @@ local function render_internal(ctx)
             break
           end
         end
-      end
-      if current_group then
-        ctx.last_cursor[current_group] = current_line
       end
     end
   end
@@ -576,10 +583,53 @@ local function render_internal(ctx)
   end
 
   if picker_win and vim.api.nvim_win_is_valid(picker_win) and #lines > 0 then
-    local restore_line = 1
-    if current_group and ctx.last_cursor[current_group] then
+    local restore_line
+
+    if current_theme then
+      if current_group then
+        for i, line in ipairs(lines) do
+          local t = M.parse_line_theme(core, line)
+          if t == current_theme then
+            -- find this line's group in the new buffer
+            local line_group
+            for j = i, 1, -1 do
+              local maybe = M.parse_line_header(lines[j] or "")
+              if maybe then
+                line_group = maybe
+                break
+              end
+            end
+            if line_group == current_group then
+              restore_line = i
+              break
+            end
+          end
+        end
+      end
+
+      if not restore_line then
+        for i, line in ipairs(lines) do
+          local t = M.parse_line_theme(core, line)
+          if t == current_theme then
+            restore_line = i
+            break
+          end
+        end
+      end
+    end
+
+    if not restore_line and ctx.last_line then
+      restore_line = math.max(1, math.min(ctx.last_line, #lines))
+    end
+
+    if not restore_line and current_group and ctx.last_cursor[current_group] then
       restore_line = math.max(1, math.min(ctx.last_cursor[current_group], #lines))
     end
+
+    if not restore_line then
+      restore_line = 1
+    end
+
     pcall(vim.api.nvim_win_set_cursor, picker_win, { restore_line, 0 })
   end
 end

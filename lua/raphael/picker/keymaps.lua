@@ -601,7 +601,7 @@ function M.attach(ctx, fns)
     if theme then
       core.toggle_bookmark(theme)
       refresh_bookmarks_set()
-      fns.render()
+      fns.render(true)
     end
   end, { buffer = buf, desc = "Toggle bookmark" })
 
