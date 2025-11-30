@@ -105,6 +105,40 @@ function M.open(ctx, fns)
     end
   end
 
+  map("i", "<C-w>", function()
+    local ok_line, line = pcall(vim.api.nvim_buf_get_lines, search_buf, 0, 1, false)
+    if not ok_line or not line or not line[1] then
+      return
+    end
+    local text = line[1]
+    if text == "" then
+      return
+    end
+    local ok_pos, pos = pcall(vim.api.nvim_win_get_cursor, search_win)
+    if not ok_pos or not pos then
+      return
+    end
+    local col = pos[2] or 0
+    local left = text:sub(1, col)
+    local right = text:sub(col + 1)
+    local new_left = left:gsub("%s*%S+$", "")
+    if new_left == left then
+      return
+    end
+    local new_text = new_left .. right
+    pcall(vim.api.nvim_buf_set_lines, search_buf, 0, -1, false, { new_text })
+    local new_col = #new_left
+    pcall(vim.api.nvim_win_set_cursor, search_win, { 1, new_col })
+  end, { buffer = search_buf })
+
+  map("i", "<C-l>", function()
+    keymaps.go_in_group(ctx)
+  end, { buffer = search_buf })
+
+  map("i", "<C-h>", function()
+    keymaps.go_out_group(ctx)
+  end, { buffer = search_buf })
+
   map("i", "<Esc>", function()
     ctx.search_query = ""
     fns.render()

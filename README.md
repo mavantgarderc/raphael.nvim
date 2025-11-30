@@ -190,7 +190,8 @@ Inside picker:
 
 Navigation & sections:
 
-- `<C-j>` / `<C-k>` & `[g` / `]g`: Next/previous header group
+- `<C-l>`/`<C-h>`: Jump to inner/outer group header",
+- `<C-j>` / `<C-k>` & `[g` / `]g`: Next/previous group header
 - `[b` / `]b`: Jump to prev/next bookmark (skips bookmarks section when needed)
 - `[r` / `]r`: Jump to prev/next history state (skips recent section)
 - `gg` / `G`: Top / bottom

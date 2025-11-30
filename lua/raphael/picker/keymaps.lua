@@ -54,6 +54,127 @@ function M.highlight_current_line(ctx)
   )
 end
 
+--- Go from a group header to its first child, or from a child back into its
+--- owning group (first non-header line after the header).
+---
+---@param ctx table
+function M.go_in_group(ctx)
+  local buf = ctx.buf
+  local win = ctx.win
+
+  if not buf or not vim.api.nvim_buf_is_valid(buf) or not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+
+  local ok_cur, cursor = pcall(vim.api.nvim_win_get_cursor, win)
+  if not ok_cur then
+    return
+  end
+
+  local cur = cursor[1]
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  if #lines == 0 then
+    return
+  end
+
+  local function is_header(line)
+    return line:match("^" .. C.ICON.GROUP_EXPANDED) or line:match("^" .. C.ICON.GROUP_COLLAPSED)
+  end
+
+  local target
+
+  local line = lines[cur] or ""
+  if is_header(line) then
+    -- On header: go to first non-header line below
+    for i = cur + 1, #lines do
+      local l = lines[i] or ""
+      if not is_header(l) then
+        target = i
+        break
+      end
+    end
+  else
+    local header_idx
+    for i = cur, 1, -1 do
+      local l = lines[i] or ""
+      if is_header(l) then
+        header_idx = i
+        break
+      end
+    end
+    if header_idx then
+      for i = header_idx + 1, #lines do
+        local l = lines[i] or ""
+        if not is_header(l) then
+          target = i
+          break
+        end
+      end
+    end
+  end
+
+  if target then
+    vim.api.nvim_win_set_cursor(win, { target, 0 })
+    M.highlight_current_line(ctx)
+  end
+end
+
+--- Go out of a group: from a child line up to its header; if already on a
+--- header, go to the previous header (if any).
+---
+---@param ctx table
+function M.go_out_group(ctx)
+  local buf = ctx.buf
+  local win = ctx.win
+
+  if not buf or not vim.api.nvim_buf_is_valid(buf) or not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+
+  local ok_cur, cursor = pcall(vim.api.nvim_win_get_cursor, win)
+  if not ok_cur then
+    return
+  end
+
+  local cur = cursor[1]
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  if #lines == 0 then
+    return
+  end
+
+  local function is_header(line)
+    return line:match("^" .. C.ICON.GROUP_EXPANDED) or line:match("^" .. C.ICON.GROUP_COLLAPSED)
+  end
+
+  local line = lines[cur] or ""
+  local target
+
+  if is_header(line) then
+    -- On header: go to previous header (if any)
+    for i = cur - 1, 1, -1 do
+      local l = lines[i] or ""
+      if is_header(l) then
+        target = i
+        break
+      end
+    end
+  else
+    -- On child: go up to its own header
+    for i = cur - 1, 1, -1 do
+      local l = lines[i] or ""
+      if is_header(l) then
+        target = i
+        break
+      end
+    end
+  end
+
+  if target then
+    vim.api.nvim_win_set_cursor(win, { target, 0 })
+    M.highlight_current_line(ctx)
+  end
+end
+
 --- Attach all picker-local keymaps to ctx.buf.
 ---
 --- Context (`ctx`) is expected to have:
@@ -279,7 +400,7 @@ function M.attach(ctx, fns)
     vim.notify("Recent section not found", vim.log.levels.WARN)
   end, { buffer = buf, desc = "Jump to Recent" })
 
-  map("n", "<C-l>", function()
+  map("n", "<C-p>", function()
     fns.render()
     M.highlight_current_line(ctx)
     vim.notify("Picker refreshed", vim.log.levels.INFO)
@@ -711,11 +832,20 @@ function M.attach(ctx, fns)
     end
   end, { buffer = buf, desc = "Clear search / show all themes" })
 
+  map("n", "<C-l>", function()
+    M.go_in_group(ctx)
+  end, { buffer = buf, desc = "Go in group" })
+
+  map("n", "<C-h>", function()
+    M.go_out_group(ctx)
+  end, { buffer = buf, desc = "Go out of group" })
+
   local help_lines = {
     "Raphael Picker - Keybindings:",
     "",
     "Navigation:",
     "  `j`/`k`         - Navigate (wraps around)",
+    "  `<C-l>`/`<C-h>` - Jump to inner/outer group header (wraps)",
     "  `<C-j>`/`<C-k>` - Jump to next/prev group header (wraps)",
     "  `[g`/`]g`       - Jump to prev/next group header (wraps)",
     "  `[b`/`]b`       - Jump to prev/next bookmark",
