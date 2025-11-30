@@ -65,6 +65,29 @@ function M.setup(core)
 
   local function buf_dir(bufnr)
     local name = vim.api.nvim_buf_get_name(bufnr)
+    local ft = vim.bo[bufnr].filetype
+
+    if ft == "oil" then
+      local ok, oil = pcall(require, "oil")
+      if ok and type(oil.get_current_dir) == "function" then
+        local dir = oil.get_current_dir()
+        if dir and dir ~= "" then
+          dir = vim.fn.fnamemodify(dir, ":p")
+          dir = dir:gsub("\\", "/")
+          if dir:sub(-1) == "/" then
+            dir = dir:sub(1, -2)
+          end
+          return dir
+        end
+      end
+      local cwd = vim.loop.cwd() or vim.fn.getcwd()
+      cwd = cwd:gsub("\\", "/")
+      if cwd:sub(-1) == "/" then
+        cwd = cwd:sub(1, -2)
+      end
+      return cwd
+    end
+
     if name == "" then
       local cwd = vim.loop.cwd() or vim.fn.getcwd()
       cwd = cwd:gsub("\\", "/")
