@@ -16,7 +16,8 @@ local M = {}
 
 local uv = vim.loop
 
---- Ensure the directory for STATE_FILE exists.
+local decode_failed_once = false
+
 local function ensure_dir()
   local dir = vim.fn.fnamemodify(constants.STATE_FILE, ":h")
   if vim.fn.isdirectory(dir) == 0 then
@@ -140,13 +141,16 @@ function M.read()
   local content = file:read("*a")
   file:close()
 
-  if not content or content == "" then
+  if not content or content:match("^%s*$") then
     return default_state()
   end
 
   local ok, decoded = pcall(vim.json.decode, content)
   if not ok then
-    vim.notify("raphael.nvim: Failed to decode state file, using defaults", vim.log.levels.WARN)
+    if not decode_failed_once then
+      vim.notify("raphael.nvim: Failed to decode state file, using defaults", vim.log.levels.WARN)
+      decode_failed_once = true
+    end
     return default_state()
   end
 

@@ -19,9 +19,13 @@ local themes = require("raphael.themes")
 --- Global behavior:
 ---   - BufEnter/FileType:
 ---       * If core.state.auto_apply is true:
----           1. Look up project → theme via core.config.project_themes
----           2. Else look up filetype → theme via themes.filetype_themes[ft]
----           3. Else fall back to core.config.default_theme
+---           1. Compute project theme (from core.config.project_themes, absolute path, longest prefix)
+---           2. Compute filetype theme (from themes.filetype_themes[ft])
+---           3. Use priority flags:
+---                - if config.project_overrides_filetype  == true: try project, then filetype
+---                - if config.filetype_overrides_project  == true: try filetype, then project
+---                - if both false (default):              try project, then filetype
+---           4. If neither works, fall back to core.config.default_theme
 ---   - LspAttach:
 ---       * Set up default highlights for LspReference* groups
 ---
@@ -95,38 +99,86 @@ function M.setup(core)
       return
     end
 
-    local theme = nil
+    local cfg = core.config or {}
+
+    local filetype_overrides_project = cfg.filetype_overrides_project
+    local project_overrides_filetype = cfg.project_overrides_filetype
+
+    if type(filetype_overrides_project) ~= "boolean" then
+      filetype_overrides_project = false
+    end
+    if type(project_overrides_filetype) ~= "boolean" then
+      project_overrides_filetype = false
+    end
+
+    if filetype_overrides_project and project_overrides_filetype then
+      filetype_overrides_project = false
+    end
 
     local proj_theme, proj_root = project_theme_for(bufnr)
-    if proj_theme then
-      if themes.is_available(proj_theme) then
-        theme = proj_theme
+    local ft_theme = themes.filetype_themes[ft]
+
+    local selected_theme = nil
+
+    local function try_theme(kind)
+      local theme_name
+      if kind == "project" then
+        theme_name = proj_theme
       else
-        vim.notify(
-          string.format("raphael: project theme '%s' for %s not available, falling back", proj_theme, proj_root),
-          vim.log.levels.WARN
-        )
+        theme_name = ft_theme
+      end
+      if not theme_name then
+        return false
+      end
+
+      if themes.is_available(theme_name) then
+        selected_theme = theme_name
+        return true
+      else
+        if kind == "project" then
+          vim.notify(
+            string.format(
+              "raphael: project theme '%s' for %s not available, falling back",
+              theme_name,
+              proj_root or "project"
+            ),
+            vim.log.levels.WARN
+          )
+        else
+          vim.notify(
+            string.format(
+              "raphael: filetype theme '%s' for %s not available, falling back",
+              theme_name,
+              ft or "filetype"
+            ),
+            vim.log.levels.WARN
+          )
+        end
+        return false
       end
     end
 
-    if not theme then
-      local ft_theme = themes.filetype_themes[ft]
-      if ft_theme and themes.is_available(ft_theme) then
-        theme = ft_theme
-      elseif ft_theme and not themes.is_available(ft_theme) then
-        vim.notify(
-          string.format("raphael: filetype theme '%s' for %s not available, falling back", ft_theme, ft),
-          vim.log.levels.WARN
-        )
+    local order
+    if project_overrides_filetype then
+      order = { "project", "filetype" }
+    elseif filetype_overrides_project then
+      order = { "filetype", "project" }
+    else
+      order = { "project", "filetype" }
+    end
+
+    for _, kind in ipairs(order) do
+      if try_theme(kind) then
+        break
       end
     end
 
-    if not theme and themes.is_available(core.config.default_theme) then
-      theme = core.config.default_theme
+    if not selected_theme and themes.is_available(core.config.default_theme) then
+      selected_theme = core.config.default_theme
     end
 
-    if theme then
-      core.apply(theme, false)
+    if selected_theme then
+      core.apply(selected_theme, false)
     end
   end
 
