@@ -64,6 +64,7 @@ function M.parse_line_theme(core, line)
     return reverse_aliases[last] or last
   end
 
+  last = nil
   for token in line:gmatch("%S+") do
     last = token
   end
@@ -355,14 +356,14 @@ local function render_internal(ctx)
 
     local indent = string.rep("  ", depth)
     local header_key = group_name
-    local collapsed = ctx.collapsed[header_key] == true
-    local header_icon = collapsed and C.ICON.GROUP_COLLAPSED or C.ICON.GROUP_EXPANDED
+    local is_collapsed = ctx.collapsed[header_key] == true
+    local header_icon = is_collapsed and C.ICON.GROUP_COLLAPSED or C.ICON.GROUP_EXPANDED
     local summary = string.format("(%d)", #leaf_themes)
 
     table.insert(lines, string.format("%s%s %s %s", indent, header_icon, group_name, summary))
     table.insert(ctx.header_lines, #lines)
 
-    if collapsed then
+    if is_collapsed then
       return
     end
 
@@ -382,10 +383,39 @@ local function render_internal(ctx)
     end
   end
 
-  if not is_display_grouped then
-    local flat_candidates = display_map
-    local flat_filtered = (search_query == "") and flat_candidates
-      or vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
+  if not is_display_grouped or search_query ~= "" then
+    local flat_candidates
+    if is_display_grouped then
+      flat_candidates = {}
+
+      local function collect_flat(node)
+        local t = type(node)
+        if t == "string" then
+          table.insert(flat_candidates, node)
+        elseif t == "table" then
+          if vim.islist(node) then
+            for _, v in ipairs(node) do
+              collect_flat(v)
+            end
+          else
+            for _, v in pairs(node) do
+              collect_flat(v)
+            end
+          end
+        end
+      end
+
+      collect_flat(display_map)
+    else
+      flat_candidates = display_map
+    end
+
+    local flat_filtered
+    if search_query == "" then
+      flat_filtered = flat_candidates
+    else
+      flat_filtered = vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
+    end
 
     sort_filtered(flat_filtered)
 
