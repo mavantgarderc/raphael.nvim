@@ -24,6 +24,8 @@ local M = {}
 ---   theme_map        : table|nil     -- list/map/nested; used by raphael.themes
 ---   filetype_themes  : table         -- ft -> theme_name
 ---   project_themes   : table         -- dir-prefix -> theme_name
+---   filetype_overrides_project : boolean -- when both a filetype + project theme match, filetype wins if true
+---   project_overrides_filetype : boolean -- when both a filetype + project theme match, project wins if true
 ---   sort_mode        : string        -- "alpha"|"recent"|"usage"|custom
 ---   custom_sorts     : table         -- sort_mode -> comparator(a,b) -> boolean
 ---   theme_aliases    : table         -- alias -> real theme name
@@ -54,6 +56,12 @@ M.defaults = {
   theme_map = nil,
   filetype_themes = {},
   project_themes = {},
+
+  -- Priority flags for auto-theme (filetype vs project).
+  -- Exactly one of these should be true, or both false for "default priority".
+  -- Default priority = project first, then filetype (matches historical behavior).
+  filetype_overrides_project = false,
+  project_overrides_filetype = false,
 
   sort_mode = "alpha",
   custom_sorts = {},
@@ -100,6 +108,9 @@ local SIMPLE_TYPE_SCHEMA = {
   theme_map = { "table", "nil" },
   filetype_themes = "table",
   project_themes  = "table",
+
+  filetype_overrides_project = "boolean",
+  project_overrides_filetype = "boolean",
 
   sort_mode = "string",
   custom_sorts = "table",
@@ -227,6 +238,14 @@ function M.validate(user)
       end
       cfg[field] = M.defaults[field]
     end
+  end
+
+  if cfg.filetype_overrides_project and cfg.project_overrides_filetype then
+    warn(
+      "config.filetype_overrides_project and config.project_overrides_filetype are both true; " ..
+      "defaulting to project_overrides_filetype"
+    )
+    cfg.filetype_overrides_project = false
   end
 
   if cfg.theme_map ~= nil and type(cfg.theme_map) ~= "table" then
