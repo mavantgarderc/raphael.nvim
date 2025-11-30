@@ -3,12 +3,12 @@
 --
 -- Responsibilities:
 --   - Global:
---       * BufEnter / FileType auto-apply of themes based on filetype
+--       * BufEnter / FileType auto-apply of themes based on project or filetype
 --       * LspAttach highlights for LSP references
 --   - Picker-specific:
 --       * CursorMoved inside picker (update palette + preview + highlight)
 --       * BufDelete on picker buffer (cleanup)
---       * TextChanged in search buffer (live search + match highlighting)
+--       * TextChanged in search buffer (live search)
 
 local M = {}
 
@@ -17,32 +17,130 @@ local themes = require("raphael.themes")
 --- Setup global autocmds that depend on the core orchestrator.
 ---
 --- Global behavior:
----   - BufEnter:
+---   - BufEnter/FileType:
 ---       * If core.state.auto_apply is true:
----           - Look up filetype → theme via themes.filetype_themes[ft]
----           - If found and available: apply that theme
----           - Otherwise: fall back to core.config.default_theme
----   - FileType:
----       * Same as BufEnter, but triggered on FileType event
----       * Emits a warning if the configured theme for that ft is not available
+---           1. Look up project → theme via core.config.project_themes
+---           2. Else look up filetype → theme via themes.filetype_themes[ft]
+---           3. Else fall back to core.config.default_theme
 ---   - LspAttach:
 ---       * Set up default highlights for LspReference* groups
 ---
 ---@param core table  # usually require("raphael.core")
 function M.setup(core)
+  local project_rules = {}
+  local cfg_projects = core.config.project_themes or {}
+
+  local function normalize_root(path)
+    if not path or path == "" then
+      return nil
+    end
+    local expanded = vim.fn.expand(path)
+    if expanded == "" then
+      return nil
+    end
+    local full = vim.fn.fnamemodify(expanded, ":p")
+    full = full:gsub("\\", "/")
+    if full:sub(-1) == "/" then
+      full = full:sub(1, -2)
+    end
+    return full
+  end
+
+  for root, theme in pairs(cfg_projects) do
+    if type(theme) == "string" and theme ~= "" then
+      local norm = normalize_root(root)
+      if norm then
+        table.insert(project_rules, { root = norm, theme = theme })
+      end
+    end
+  end
+
+  table.sort(project_rules, function(a, b)
+    return #a.root > #b.root
+  end)
+
+  local function buf_dir(bufnr)
+    local name = vim.api.nvim_buf_get_name(bufnr)
+    if name == "" then
+      local cwd = vim.loop.cwd() or vim.fn.getcwd()
+      cwd = cwd:gsub("\\", "/")
+      if cwd:sub(-1) == "/" then
+        cwd = cwd:sub(1, -2)
+      end
+      return cwd
+    end
+    local dir = vim.fn.fnamemodify(name, ":p:h")
+    dir = dir:gsub("\\", "/")
+    if dir:sub(-1) == "/" then
+      dir = dir:sub(1, -2)
+    end
+    return dir
+  end
+
+  local function project_theme_for(bufnr)
+    local dir = buf_dir(bufnr)
+    if not dir then
+      return nil
+    end
+    for _, rule in ipairs(project_rules) do
+      if dir:sub(1, #rule.root) == rule.root then
+        return rule.theme, rule.root
+      end
+    end
+    return nil
+  end
+
+  local function apply_auto(bufnr, ft)
+    if not core.state.auto_apply then
+      return
+    end
+
+    local theme = nil
+
+    local proj_theme, proj_root = project_theme_for(bufnr)
+    if proj_theme then
+      if themes.is_available(proj_theme) then
+        theme = proj_theme
+      else
+        vim.notify(
+          string.format("raphael: project theme '%s' for %s not available, falling back", proj_theme, proj_root),
+          vim.log.levels.WARN
+        )
+      end
+    end
+
+    if not theme then
+      local ft_theme = themes.filetype_themes[ft]
+      if ft_theme and themes.is_available(ft_theme) then
+        theme = ft_theme
+      elseif ft_theme and not themes.is_available(ft_theme) then
+        vim.notify(
+          string.format("raphael: filetype theme '%s' for %s not available, falling back", ft_theme, ft),
+          vim.log.levels.WARN
+        )
+      end
+    end
+
+    if not theme and themes.is_available(core.config.default_theme) then
+      theme = core.config.default_theme
+    end
+
+    if theme then
+      core.apply(theme, false)
+    end
+  end
+
   vim.api.nvim_create_autocmd("BufEnter", {
     callback = function(ev)
-      if not core.state.auto_apply then
-        return
-      end
-
       local ft = vim.bo[ev.buf].filetype
-      local theme = themes.filetype_themes[ft]
-      if theme and themes.is_available(theme) then
-        core.apply(theme, false)
-      else
-        core.apply(core.config.default_theme, false)
-      end
+      apply_auto(ev.buf, ft)
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("FileType", {
+    callback = function(ev)
+      local ft = ev.match
+      apply_auto(ev.buf, ft)
     end,
   })
 
@@ -53,47 +151,12 @@ function M.setup(core)
       vim.api.nvim_set_hl(0, "LspReferenceWrite", { link = "Visual" })
     end,
   })
-
-  vim.api.nvim_create_autocmd("FileType", {
-    callback = function(ev)
-      if not core.state.auto_apply then
-        return
-      end
-
-      local ft = ev.match
-      local theme_ft = themes.filetype_themes[ft]
-
-      if theme_ft and themes.is_available(theme_ft) then
-        core.apply(theme_ft, false)
-      elseif theme_ft and not themes.is_available(theme_ft) then
-        vim.notify(
-          string.format("raphael: filetype theme '%s' for %s not available, using default", theme_ft, ft),
-          vim.log.levels.WARN
-        )
-        if themes.is_available(core.config.default_theme) then
-          core.apply(core.config.default_theme, false)
-        end
-      end
-    end,
-  })
 end
 
 --- Attach a CursorMoved autocmd to the picker buffer.
 ---
---- Each cursor movement inside the picker can:
----   - Parse the current line to extract a theme name (parse(line))
----   - Preview that theme (preview(theme))
----   - Re-apply visual highlight for the current line (highlight())
----   - Trigger a debounced preview update (e.g. code sample) (update_preview)
----
----@param picker_buf integer  # buffer number of the picker
----@param cbs table|nil       # callbacks table:
----   {
----     parse          = fun(line:string):string|nil,
----     preview        = fun(theme:string)|nil,
----     highlight      = fun()|nil,
----     update_preview = fun(opts:table)|nil,
----   }
+---@param picker_buf integer
+---@param cbs table|nil
 function M.picker_cursor_autocmd(picker_buf, cbs)
   if type(picker_buf) ~= "number" then
     error("picker_cursor_autocmd: picker_buf must be a buffer number")
@@ -131,16 +194,8 @@ end
 
 --- Attach a BufDelete autocmd to the picker buffer.
 ---
---- Once the picker buffer is deleted, this:
----   - Optionally logs via cbs.log(level, msg)
----   - Calls cbs.cleanup() for any extra cleanup (timers, windows, etc.)
----
----@param picker_buf integer  # buffer number of the picker
----@param cbs table|nil       # callbacks table:
----   {
----     log     = fun(level:string, msg:string)|nil,
----     cleanup = fun()|nil,
----   }
+---@param picker_buf integer
+---@param cbs table|nil
 function M.picker_bufdelete_autocmd(picker_buf, cbs)
   if type(picker_buf) ~= "number" then
     error("picker_bufdelete_autocmd: picker_buf must be a buffer number")
@@ -170,19 +225,9 @@ end
 ---   - Stripping the search icon prefix (ICON_SEARCH)
 ---   - Updating the search query in the picker state (set_search_query)
 ---   - Re-rendering the picker (render)
----   - Highlighting matches in the picker buffer using ns + "Search"
 ---
 ---@param search_buf integer  # buffer number of the search prompt
----@param cbs table|nil       # callbacks table:
----   {
----     trim           = fun(s:string):string|nil,
----     ICON_SEARCH    = string|nil,
----     render         = fun(opts:table|nil)|nil,
----     get_picker_buf = fun():integer|nil,
----     get_picker_opts= fun():table|nil,
----     ns             = integer,            -- extmark namespace for search matches
----     set_search_query = fun(q:string)|nil,
----   }
+---@param cbs table|nil
 function M.search_textchange_autocmd(search_buf, cbs)
   if type(search_buf) ~= "number" then
     error("search_textchange_autocmd: search_buf must be a buffer number")
@@ -191,9 +236,7 @@ function M.search_textchange_autocmd(search_buf, cbs)
   local trim = cbs.trim
   local ICON_SEARCH = cbs.ICON_SEARCH
   local render = cbs.render
-  local get_picker_buf = cbs.get_picker_buf
   local get_picker_opts = cbs.get_picker_opts
-  local ns = cbs.ns
   local set_search_query = cbs.set_search_query
 
   vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
@@ -220,38 +263,6 @@ function M.search_textchange_autocmd(search_buf, cbs)
           opts = get_picker_opts()
         end
         pcall(render, opts)
-      end
-
-      local pbuf = nil
-      if type(get_picker_buf) == "function" then
-        pbuf = get_picker_buf()
-      end
-
-      if pbuf and vim.api.nvim_buf_is_valid(pbuf) then
-        pcall(vim.api.nvim_buf_clear_namespace, pbuf, ns, 0, -1)
-        if new_query ~= "" and #new_query >= 2 then
-          local ok_plines, picker_lines = pcall(vim.api.nvim_buf_get_lines, pbuf, 0, -1, false)
-          if ok_plines and picker_lines then
-            local query_lower = new_query:lower()
-            for i, line in ipairs(picker_lines) do
-              local start_idx = 1
-              local match_count = 0
-              while match_count < 10 do
-                local s, e = line:lower():find(query_lower, start_idx, true)
-                if not s then
-                  break
-                end
-                pcall(vim.api.nvim_buf_set_extmark, pbuf, ns, i - 1, s - 1, {
-                  end_col = e,
-                  hl_group = "Search",
-                  strict = false,
-                })
-                start_idx = e + 1
-                match_count = match_count + 1
-              end
-            end
-          end
-        end
       end
     end,
   })

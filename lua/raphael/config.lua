@@ -23,6 +23,7 @@ local M = {}
 ---   recent_group     : boolean       -- show/hide "Recent" section in picker
 ---   theme_map        : table|nil     -- list/map/nested; used by raphael.themes
 ---   filetype_themes  : table         -- ft -> theme_name
+---   project_themes   : table         -- dir-prefix -> theme_name
 ---   sort_mode        : string        -- "alpha"|"recent"|"usage"|custom
 ---   custom_sorts     : table         -- sort_mode -> comparator(a,b) -> boolean
 ---   theme_aliases    : table         -- alias -> real theme name
@@ -52,6 +53,7 @@ M.defaults = {
 
   theme_map = nil,
   filetype_themes = {},
+  project_themes = {},
 
   sort_mode = "alpha",
   custom_sorts = {},
@@ -97,6 +99,7 @@ local SIMPLE_TYPE_SCHEMA = {
 
   theme_map = { "table", "nil" },
   filetype_themes = "table",
+  project_themes  = "table",
 
   sort_mode = "string",
   custom_sorts = "table",
@@ -174,13 +177,7 @@ local function apply_schema(cfg, user)
       end
     else
       if not type_matches(val, expected) then
-        warn(
-          string.format(
-            "config.%s has wrong type (got %s); using default",
-            key,
-            type(val)
-          )
-        )
+        warn(string.format("config.%s has wrong type (got %s); using default", key, type(val)))
         cfg[key] = vim.deepcopy(default_val)
       end
     end
@@ -188,19 +185,6 @@ local function apply_schema(cfg, user)
 end
 
 --- Validate and normalize user configuration.
----
---- Responsibilities:
----   - Deep-merge user opts into M.defaults
----   - Validate:
----       * leader, mappings
----       * default_theme, bookmark_group, recent_group
----       * theme_map, filetype_themes
----       * theme_aliases, history_max_size
----       * sample_preview
----       * on_apply
----       * enable_* toggles
----       * icons (merges into constants.ICON)
----   - Returns a safe, normalized config table used by raphael.core.
 ---
 ---@param user table|nil  User-provided configuration
 ---@return table cfg      Normalized + merged config
@@ -263,6 +247,21 @@ function M.validate(user)
       end
     end
     cfg.filetype_themes = cleaned
+  end
+
+  if type(cfg.project_themes) ~= "table" then
+    warn("config.project_themes must be a table; using empty table")
+    cfg.project_themes = {}
+  else
+    local cleaned = {}
+    for path, theme in pairs(cfg.project_themes) do
+      if type(path) == "string" and type(theme) == "string" and theme ~= "" then
+        cleaned[path] = theme
+      else
+        warn(string.format("Invalid project_themes entry (%s = %s), ignoring", tostring(path), tostring(theme)))
+      end
+    end
+    cfg.project_themes = cleaned
   end
 
   if type(cfg.sort_mode) ~= "string" then

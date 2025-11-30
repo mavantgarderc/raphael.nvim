@@ -114,7 +114,19 @@ return {
       -- ...
     },
 
-    -- Optional right-side code sample preview
+    -- Match by directory prefix (longest prefix wins).
+    -- Use absolute paths or paths with ~; they’re normalized.
+    project_themes = {
+
+      -- Example:
+      ["~/projects/work"] = "kanagawa-paper-edo",
+      ["~/projects/dc-themes"] = "kanagawa-paper-sunset",
+
+      -- e.g. your dotfiles repo:
+      ["~/dotfiles"] = "detox-ink",
+      -- Optional right-side code sample preview
+    },
+
     sample_preview = {
       enabled       = true,
       relative_size = 0.5,      -- fraction of picker width (0.1–1.0)

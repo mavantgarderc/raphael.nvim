@@ -44,7 +44,6 @@ function M.parse_line_theme(core, line)
   if not line or line == "" then
     return nil
   end
-  -- Header lines end with "(N)"
   if line:match("%(%d+%)%s*$") then
     return nil
   end
@@ -439,7 +438,6 @@ local function render_internal(ctx)
     if search_query == "" then
       flat_filtered = flat_candidates
     else
-      -- Fuzzy search similar to Telescope, using builtin matchfuzzy.
       flat_filtered = vim.fn.matchfuzzy(flat_candidates, search_query, { text = true })
     end
 
@@ -485,6 +483,79 @@ local function render_internal(ctx)
   pcall(vim.api.nvim_set_option_value, "modifiable", true, { buf = picker_buf })
   pcall(vim.api.nvim_buf_set_lines, picker_buf, 0, -1, false, lines)
   pcall(vim.api.nvim_set_option_value, "modifiable", false, { buf = picker_buf })
+
+  do
+    local query = ctx.search_query or ""
+    local ns_search = C.NS.SEARCH_MATCH
+
+    pcall(vim.api.nvim_buf_clear_namespace, picker_buf, ns_search, 0, -1)
+
+    if query ~= "" then
+      local q_lower = query:lower()
+
+      local function fuzzy_positions(line, q)
+        local l = line:lower()
+        local positions = {}
+        local i = 1
+        for j = 1, #q do
+          local c = q:sub(j, j)
+          local found = l:find(c, i, true)
+          if not found then
+            return nil
+          end
+          positions[#positions + 1] = found
+          i = found + 1
+        end
+        return positions
+      end
+
+      for i, line in ipairs(lines) do
+        if line ~= "" then
+          local pos = (#query >= 2) and fuzzy_positions(line, query) or nil
+
+          if pos and #pos > 0 then
+            local start_col_1
+            local last_col_1
+
+            for _, col_1 in ipairs(pos) do
+              if not start_col_1 then
+                start_col_1 = col_1
+                last_col_1 = col_1
+              elseif col_1 == last_col_1 + 1 then
+                last_col_1 = col_1
+              else
+                pcall(vim.api.nvim_buf_set_extmark, picker_buf, ns_search, i - 1, start_col_1 - 1, {
+                  end_col = last_col_1,
+                  hl_group = "Search",
+                  strict = false,
+                })
+                start_col_1 = col_1
+                last_col_1 = col_1
+              end
+            end
+
+            if start_col_1 then
+              pcall(vim.api.nvim_buf_set_extmark, picker_buf, ns_search, i - 1, start_col_1 - 1, {
+                end_col = last_col_1,
+                hl_group = "Search",
+                strict = false,
+              })
+            end
+          else
+            local lline = line:lower()
+            local s, e = lline:find(q_lower, 1, true)
+            if s and e then
+              pcall(vim.api.nvim_buf_set_extmark, picker_buf, ns_search, i - 1, s - 1, {
+                end_col = e,
+                hl_group = "Search",
+                strict = false,
+              })
+            end
+          end
+        end
+      end
+    end
+  end
 
   if picker_win and vim.api.nvim_win_is_valid(picker_win) and #lines > 0 then
     local restore_line = 1
