@@ -180,10 +180,17 @@ local function render_internal(ctx)
   local show_recent = cfg.recent_group ~= false
 
   local indent_width = tonumber(cfg.group_indent) or 2
-  if indent_width < 0 then indent_width = 0 end
-  if indent_width > 8 then indent_width = 8 end
+  if indent_width < 0 then
+    indent_width = 0
+  end
+  if indent_width > 8 then
+    indent_width = 8
+  end
 
   local function indent_for_level(level)
+    if level <= 0 then
+      return ""
+    end
     return string.rep(" ", indent_width * level)
   end
 
@@ -395,7 +402,7 @@ local function render_internal(ctx)
 
     if #list_items > 0 then
       sort_filtered(list_items)
-      local line_indent = indent_for_level(depth + 1)
+      local line_indent = indent_for_level(depth)
       for _, t in ipairs(list_items) do
         local display = cfg.theme_aliases[t] or t
         local warning = themes.is_available(t) and "" or C.ICON.WARN

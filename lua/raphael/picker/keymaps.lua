@@ -271,6 +271,28 @@ function M.attach(ctx, fns)
   local base_title = ctx.base_title
   local opts = ctx.opts
 
+  local function set_all_groups_collapsed(collapsed)
+    if not buf or not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    for _, ln in ipairs(ctx.header_lines) do
+      local line = lines[ln] or ""
+      local hdr = render.parse_line_header(line)
+      if hdr then
+        if hdr == "Bookmarks" then
+          hdr = "__bookmarks"
+        elseif hdr == "Recent" then
+          hdr = "__recent"
+        end
+        ctx.collapsed[hdr] = collapsed
+      end
+    end
+    fns.update_state_collapsed()
+    fns.render(true)
+    M.highlight_current_line(ctx)
+  end
+
   local function parse_current_theme()
     local line = vim.api.nvim_get_current_line()
     return render.parse_line_theme(core, line)
@@ -601,6 +623,7 @@ function M.attach(ctx, fns)
     if theme then
       core.toggle_bookmark(theme)
       refresh_bookmarks_set()
+      -- immediate render so cursor restore uses current theme/group
       fns.render(true)
     end
   end, { buffer = buf, desc = "Toggle bookmark" })
@@ -1000,6 +1023,8 @@ function M.attach(ctx, fns)
     "",
     "Actions:",
     "  `<CR>`        - Select theme",
+    "  `<C-A-k>`     - Expand all groups",
+    "  `<C-A-j>`     - Collapse all groups",
     "  `c`           - Collapse/expand group",
     "  `s`           - Cycle sort mode",
     "  `S`           - Toggle sorting on/off",
@@ -1062,6 +1087,14 @@ function M.attach(ctx, fns)
       preview.toggle_compare(ctx, theme)
     end, { buffer = buf, silent = true, noremap = true, desc = "Compare with current theme" })
   end
+
+  map("n", "<C-A-j>", function()
+    set_all_groups_collapsed(true)
+  end, { buffer = buf, desc = "Collapse all groups" })
+
+  map("n", "<C-A-k>", function()
+    set_all_groups_collapsed(false)
+  end, { buffer = buf, desc = "Expand all groups" })
 end
 
 return M
