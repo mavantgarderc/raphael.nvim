@@ -37,7 +37,8 @@ M.config = {}
 ---@field usage     table<string, integer> -- usage count per theme
 ---@field collapsed table<string, boolean> -- group collapse state
 ---@field sort_mode string   -- current sort mode ("alpha", "recent", "usage", or custom)
----@field undo_history table -- detailed undo stack (managed by extras.history/cache)
+---@field undo_history  table    -- detailed undo stack (managed by extras.history/cache)
+---@field quick_slots   table<string,string> -- quick favorite slots 0–9
 M.state = {
   current = nil,
   saved = nil,
@@ -53,6 +54,7 @@ M.state = {
     index = 0,
     max_size = 0,
   },
+  quick_slots = {},
 }
 
 M.picker = picker
@@ -114,10 +116,6 @@ local function record_manual_change(theme)
   cache.add_to_history(theme)
   history.add(theme)
 end
-
--- ────────────────────────────────────────────────────────────────────────
--- Public API
--- ────────────────────────────────────────────────────────────────────────
 
 --- Setup core orchestrator.
 ---
@@ -237,6 +235,30 @@ function M.toggle_bookmark(theme)
   else
     vim.notify("raphael: removed bookmark " .. theme, vim.log.levels.INFO)
   end
+end
+
+--- Set a quick favorite slot (0–9) to a theme.
+---@param slot string|number
+---@param theme string
+function M.set_quick_slot(slot, theme)
+  if not theme or theme == "" then
+    return
+  end
+
+  local s = tostring(slot)
+  cache.set_quick_slot(s, theme)
+  M.state.quick_slots = cache.get_quick_slots()
+
+  vim.notify(string.format("raphael: quick slot %s -> %s", s, theme), vim.log.levels.INFO)
+end
+
+--- Get theme assigned to a quick slot.
+---@param slot string|number
+---@return string|nil
+function M.get_quick_slot(slot)
+  local s = tostring(slot)
+  local slots = M.state.quick_slots or cache.get_quick_slots()
+  return slots[s]
 end
 
 function M.refresh_and_reload()

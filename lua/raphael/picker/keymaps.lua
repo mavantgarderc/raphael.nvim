@@ -5,6 +5,7 @@
 --   - History (u, <C-r>, H, J, T)
 --   - Sections navigation ([b/ ]b, [r/ ]r, gb, gr, ga)
 --   - Code preview (i, I, C)
+--   - Quick slots (m0–m9 assign, 0–9 jump)
 --
 -- This module DOES NOT own state; it operates on `ctx` and callbacks.
 -- It expects `ctx` to be the live picker context created in picker/ui.lua.
@@ -231,6 +232,67 @@ function M.attach(ctx, fns)
 
   local function refresh_bookmarks_set()
     ctx.bookmarks = require("raphael.picker.bookmarks").build_set(state)
+  end
+
+  local function jump_to_theme(theme)
+    if not theme or theme == "" then
+      return false
+    end
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    for i, line in ipairs(lines) do
+      local t = render.parse_line_theme(core, line)
+      if t == theme then
+        vim.api.nvim_win_set_cursor(win, { i, 0 })
+        M.highlight_current_line(ctx)
+        preview.preview_theme(ctx, theme)
+        return true
+      end
+    end
+    return false
+  end
+
+  local function jump_to_quick_slot(slot)
+    local theme = core.get_quick_slot and core.get_quick_slot(slot)
+    if not theme then
+      vim.notify(string.format("raphael: no theme assigned to quick slot %s", tostring(slot)), vim.log.levels.WARN)
+      return
+    end
+    if not themes.is_available(theme) then
+      vim.notify(
+        string.format("raphael: quick slot %s theme '%s' not installed", tostring(slot), theme),
+        vim.log.levels.WARN
+      )
+      return
+    end
+    if not jump_to_theme(theme) then
+      vim.notify(
+        string.format("raphael: quick slot %s theme '%s' not visible in this picker", tostring(slot), theme),
+        vim.log.levels.WARN
+      )
+    end
+  end
+
+  --- Assign current line's theme to quick slot N (0–9).
+  local function assign_quick_slot(slot)
+    local hdr = parse_current_header()
+    if hdr then
+      vim.notify("Cannot assign a group header to quick slot", vim.log.levels.WARN)
+      return
+    end
+    local theme = parse_current_theme()
+    if not theme then
+      vim.notify("No theme on this line to assign to quick slot", vim.log.levels.WARN)
+      return
+    end
+    if not themes.is_available(theme) then
+      vim.notify("Theme not installed: " .. theme, vim.log.levels.ERROR)
+      return
+    end
+    if not core.set_quick_slot then
+      vim.notify("raphael: quick slots API not available in core", vim.log.levels.ERROR)
+      return
+    end
+    core.set_quick_slot(slot, theme)
   end
 
   map("n", "q", function()
@@ -841,6 +903,18 @@ function M.attach(ctx, fns)
     M.go_out_group(ctx)
   end, { buffer = buf, desc = "Go out of group" })
 
+  for d = 0, 9 do
+    local slot = tostring(d)
+
+    map("n", "m" .. slot, function()
+      assign_quick_slot(slot)
+    end, { buffer = buf, desc = "Assign theme to quick slot " .. slot })
+
+    map("n", slot, function()
+      jump_to_quick_slot(slot)
+    end, { buffer = buf, desc = "Jump to quick slot " .. slot })
+  end
+
   local help_lines = {
     "Raphael Picker - Keybindings:",
     "",
@@ -869,9 +943,15 @@ function M.attach(ctx, fns)
     "  `J`           - Jump to history position",
     "  `T`           - Show quick stats",
     "  `r`           - Apply random theme",
+    "",
+    "Preview:",
     "  `i`           - Show Code Sample, Iterate languages forward",
     "  `I`           - Iterate languages backward",
-    "  `C`           - Mark/compare candidate with current theme (toggle)",
+    "  `C`           - Compare candidate with current theme (toggle)",
+    "",
+    "Quick slots:",
+    "  `m0`..`m9`    - Map current theme to quick slot 0-9",
+    "  `0`..`9`      - Jump to quick slot theme in picker & preview it",
     "",
     "Other:",
     "  `q`/`<Esc>`   - Quit (revert theme)",

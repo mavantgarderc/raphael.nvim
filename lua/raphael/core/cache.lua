@@ -48,6 +48,7 @@ local function default_state()
       index = 0,
       max_size = constants.HISTORY_MAX_SIZE,
     },
+    quick_slots = {},
   }
 end
 
@@ -92,6 +93,7 @@ local function normalize_state(decoded)
   base.history = base.history or {}
   base.usage = base.usage or {}
   base.collapsed = base.collapsed or {}
+  base.quick_slots = base.quick_slots or {}
 
   return base
 end
@@ -123,9 +125,6 @@ local function async_write(path, data)
     end)
   end)
 end
-
--- Core API: full read/write
--- ────────────────────────────────────────────────────────────────────────
 
 --- Read state from disk (or return defaults if file doesn't exist / is invalid).
 ---
@@ -191,9 +190,6 @@ function M.clear()
   local state = default_state()
   M.write(state)
 end
-
--- Convenience helpers (stateless, always go via read/write)
--- ────────────────────────────────────────────────────────────────────────
 
 --- Get current theme from persistent state.
 ---
@@ -411,8 +407,77 @@ function M.set_auto_apply(enabled)
   M.write(state)
 end
 
--- Undo stack helpers
--- ────────────────────────────────────────────────────────────────────────
+local function normalize_slot(slot)
+  if type(slot) == "number" then
+    slot = tostring(slot)
+  end
+  if type(slot) ~= "string" then
+    return nil
+  end
+  if not slot:match("^[0-9]$") then
+    return nil
+  end
+  return slot
+end
+
+--- Get all quick slots map from persistent state.
+---
+--- @return table<string, string>
+function M.get_quick_slots()
+  local state = M.read()
+  return state.quick_slots or {}
+end
+
+--- Set a quick slot (0–9) to a theme name.
+---
+--- @param slot string|number
+--- @param theme string
+function M.set_quick_slot(slot, theme)
+  slot = normalize_slot(slot)
+  if not slot then
+    vim.notify("raphael.nvim: quick slot must be 0–9", vim.log.levels.WARN)
+    return
+  end
+  if not theme or theme == "" then
+    vim.notify("raphael.nvim: quick slot theme must be non-empty", vim.log.levels.WARN)
+    return
+  end
+
+  local state = M.read()
+  state.quick_slots = state.quick_slots or {}
+  state.quick_slots[slot] = theme
+  M.write(state)
+  return theme
+end
+
+--- Clear a quick slot (0–9).
+---
+--- @param slot string|number
+function M.clear_quick_slot(slot)
+  slot = normalize_slot(slot)
+  if not slot then
+    return
+  end
+  local state = M.read()
+  if not state.quick_slots then
+    return
+  end
+  state.quick_slots[slot] = nil
+  M.write(state)
+end
+
+--- Get a single quick slot theme.
+---
+--- @param slot string|number
+--- @return string|nil
+function M.get_quick_slot(slot)
+  slot = normalize_slot(slot)
+  if not slot then
+    return nil
+  end
+  local state = M.read()
+  return (state.quick_slots or {})[slot]
+end
 
 --- Push theme onto undo stack in persistent state.
 ---
