@@ -33,6 +33,7 @@ local history = require("raphael.extras.history")
 ---   - :RaphaelRedo
 ---   - :RaphaelRandom
 ---   - :RaphaelBookmarkToggle
+---   - :RaphaelProfile [name]
 ---
 ---@param core table  # usually require("raphael.core")
 function M.setup(core)
@@ -166,6 +167,83 @@ function M.setup(core)
       core.toggle_bookmark(picker.get_current_theme())
     end
   end, { desc = "Toggle bookmark for the theme under the cursor" })
+
+  vim.api.nvim_create_user_command("RaphaelProfile", function(opts)
+    local name = opts.args
+    local profiles = (core.config and core.config.profiles) or {}
+
+    if not name or name == "" then
+      if not profiles or vim.tbl_isempty(profiles) then
+        vim.notify("raphael: no profiles configured", vim.log.levels.INFO)
+        return
+      end
+
+      local current = core.get_current_profile and core.get_current_profile() or nil
+      local names = {}
+      for pname, _ in pairs(profiles) do
+        table.insert(names, pname)
+      end
+      table.sort(names)
+
+      local lines = { "raphael profiles:", "" }
+      for _, pname in ipairs(names) do
+        local mark = (pname == current) and " *" or ""
+        table.insert(lines, string.format("  - %s%s", pname, mark))
+      end
+      if not current then
+        table.insert(lines, "")
+        table.insert(lines, "Current: base (no profile)")
+      end
+
+      vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
+      return
+    end
+
+    if name == "base" or name == "default" then
+      if core.set_profile then
+        core.set_profile(nil)
+      else
+        vim.notify("raphael: core.set_profile not available", vim.log.levels.ERROR)
+      end
+      return
+    end
+
+    if not profiles[name] then
+      vim.notify(string.format("raphael: unknown profile '%s'", name), vim.log.levels.WARN)
+      return
+    end
+
+    if core.set_profile then
+      core.set_profile(name)
+    else
+      vim.notify("raphael: core.set_profile not available", vim.log.levels.ERROR)
+    end
+  end, {
+    nargs = "?",
+    complete = function(ArgLead)
+      local profiles = (core.config and core.config.profiles) or {}
+      local names = {}
+      for pname, _ in pairs(profiles) do
+        table.insert(names, pname)
+      end
+      table.sort(names)
+      table.insert(names, 1, "base")
+
+      if not ArgLead or ArgLead == "" then
+        return names
+      end
+
+      local res = {}
+      local needle = ArgLead:lower()
+      for _, n in ipairs(names) do
+        if n:lower():find(needle, 1, true) then
+          table.insert(res, n)
+        end
+      end
+      return res
+    end,
+    desc = "Switch Raphael theme profile",
+  })
 end
 
 return M

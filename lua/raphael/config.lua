@@ -26,6 +26,8 @@ local M = {}
 ---   project_themes   : table         -- dir-prefix -> theme_name
 ---   filetype_overrides_project : boolean -- when both a filetype + project theme match, filetype wins if true
 ---   project_overrides_filetype : boolean -- when both a filetype + project theme match, project wins if true
+---   profiles         : table         -- name -> partial config (overlays base config)
+---   current_profile  : string|nil    -- active profile name at startup (optional)
 ---   sort_mode        : string        -- "alpha"|"recent"|"usage"|custom
 ---   custom_sorts     : table         -- sort_mode -> comparator(a,b) -> boolean
 ---   theme_aliases    : table         -- alias -> real theme name
@@ -62,6 +64,16 @@ M.defaults = {
   -- Default priority = project first, then filetype (matches historical behavior).
   filetype_overrides_project = false,
   project_overrides_filetype = false,
+
+  -- Theme profiles (work / night / presentation, etc.)
+  -- Each profile is a partial config:
+  --   profiles = {
+  --     work = { default_theme = "...", filetype_themes = { ... }, ... },
+  --     night = { default_theme = "..." },
+  --   }
+  -- current_profile is the profile name to activate at startup (optional).
+  profiles = {},
+  current_profile = nil,
 
   sort_mode = "alpha",
   custom_sorts = {},
@@ -107,10 +119,13 @@ local SIMPLE_TYPE_SCHEMA = {
 
   theme_map = { "table", "nil" },
   filetype_themes = "table",
-  project_themes  = "table",
+  project_themes = "table",
 
   filetype_overrides_project = "boolean",
   project_overrides_filetype = "boolean",
+
+  profiles = { "table", "nil" },
+  current_profile = { "string", "nil" },
 
   sort_mode = "string",
   custom_sorts = "table",
@@ -176,9 +191,7 @@ local function apply_schema(cfg, user)
     local val = cfg[key]
     local default_val = M.defaults[key]
 
-    local allows_nil = default_val == nil
-      and type(expected) == "table"
-      and vim.tbl_contains(expected, "nil")
+    local allows_nil = default_val == nil and type(expected) == "table" and vim.tbl_contains(expected, "nil")
 
     if val == nil then
       if default_val ~= nil then
@@ -242,8 +255,8 @@ function M.validate(user)
 
   if cfg.filetype_overrides_project and cfg.project_overrides_filetype then
     warn(
-      "config.filetype_overrides_project and config.project_overrides_filetype are both true; " ..
-      "defaulting to project_overrides_filetype"
+      "config.filetype_overrides_project and config.project_overrides_filetype are both true; "
+        .. "defaulting to project_overrides_filetype"
     )
     cfg.filetype_overrides_project = false
   end
@@ -281,6 +294,36 @@ function M.validate(user)
       end
     end
     cfg.project_themes = cleaned
+  end
+
+  if cfg.profiles ~= nil and type(cfg.profiles) ~= "table" then
+    warn("config.profiles must be a table of name -> table; ignoring")
+    cfg.profiles = {}
+  else
+    local cleaned_profiles = {}
+    for name, prof in pairs(cfg.profiles or {}) do
+      if type(name) == "string" and type(prof) == "table" then
+        cleaned_profiles[name] = prof
+      else
+        warn(string.format("Invalid profiles entry (%s = %s), ignoring", tostring(name), tostring(prof)))
+      end
+    end
+    cfg.profiles = cleaned_profiles
+  end
+
+  if cfg.current_profile ~= nil and type(cfg.current_profile) ~= "string" then
+    warn("config.current_profile must be a string or nil; ignoring")
+    cfg.current_profile = nil
+  end
+
+  if cfg.current_profile ~= nil and not cfg.profiles[cfg.current_profile] then
+    warn(
+      string.format(
+        "config.current_profile '%s' has no matching entry in config.profiles; ignoring",
+        tostring(cfg.current_profile)
+      )
+    )
+    cfg.current_profile = nil
   end
 
   if type(cfg.sort_mode) ~= "string" then

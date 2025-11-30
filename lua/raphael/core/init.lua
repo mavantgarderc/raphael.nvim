@@ -21,24 +21,31 @@ local picker = require("raphael.picker.ui")
 
 local M = {}
 
---- Runtime configuration (validated by raphael.config.validate()).
+--- Base configuration as provided by the user (after validation).
+--- This is the "root" config, prior to applying any profile overlay.
+---@type table
+M.base_config = {}
+
+--- Active configuration (base_config overlaid with current profile, if any).
+--- This is what the rest of the plugin uses.
 ---@type table
 M.config = {}
 
 --- In-memory state mirror of what is persisted via cache.
 --- This is NOT the only source of truth; cache is canonical.
 ---@class RaphaelState
----@field current?  string  -- currently active theme
----@field saved?    string  -- last manually saved theme
----@field previous? string  -- theme before current (for quick revert)
----@field auto_apply boolean -- whether BufEnter/FileType auto-apply is enabled
----@field bookmarks string[] -- list of bookmarked themes
----@field history   string[] -- recent themes (newest first)
----@field usage     table<string, integer> -- usage count per theme
----@field collapsed table<string, boolean> -- group collapse state
----@field sort_mode string   -- current sort mode ("alpha", "recent", "usage", or custom)
----@field undo_history  table    -- detailed undo stack (managed by extras.history/cache)
----@field quick_slots   table<string,string> -- quick favorite slots 0–9
+---@field current?         string  -- currently active theme
+---@field saved?           string  -- last manually saved theme
+---@field previous?        string  -- theme before current (for quick revert)
+---@field auto_apply       boolean -- whether BufEnter/FileType auto-apply is enabled
+---@field bookmarks        string[] -- list of bookmarked themes
+---@field history          string[] -- recent themes (newest first)
+---@field usage            table<string, integer> -- usage count per theme
+---@field collapsed        table<string, boolean> -- group collapse state
+---@field sort_mode        string   -- current sort mode ("alpha", "recent", "usage", or custom)
+---@field undo_history     table    -- detailed undo stack (managed by extras.history/cache)
+---@field quick_slots      table<string,string> -- quick favorite slots "0"-"9" -> theme_name
+---@field current_profile? string   -- active profile name (if any)
 M.state = {
   current = nil,
   saved = nil,
@@ -55,14 +62,10 @@ M.state = {
     max_size = 0,
   },
   quick_slots = {},
+  current_profile = nil,
 }
 
 M.picker = picker
-
-local function reload_state_from_cache()
-  local s = cache.read()
-  M.state = s
-end
 
 local function save_state_to_cache()
   cache.write(M.state)
@@ -117,29 +120,84 @@ local function record_manual_change(theme)
   history.add(theme)
 end
 
+--- Build the effective config for a given profile name.
+---
+--- Semantics:
+---   - base_config is the validated user config (M.base_config)
+---   - profile_name (string|nil):
+---       * nil          → just base_config (with .current_profile=nil)
+---       * valid name   → vim.tbl_deep_extend("force", base_config, profiles[name])
+---   - profiles are taken from base_config.profiles
+---
+---@param base table
+---@param profile_name string|nil
+---@return table effective_config
+local function make_effective_config(base, profile_name)
+  local base_copy = vim.deepcopy(base or {})
+  local profiles = base_copy.profiles or {}
+  base_copy.profiles = profiles
+
+  if not profile_name then
+    base_copy.current_profile = nil
+    return base_copy
+  end
+
+  local prof_cfg = profiles[profile_name]
+  if type(prof_cfg) ~= "table" then
+    base_copy.current_profile = nil
+    return base_copy
+  end
+
+  local effective = vim.tbl_deep_extend("force", base_copy, prof_cfg)
+  -- Ensure profiles table itself isn't overridden by profile contents.
+  effective.profiles = profiles
+  effective.current_profile = profile_name
+  return effective
+end
+
 --- Setup core orchestrator.
 ---
 --- This is typically called once from `require("raphael").setup(opts)`,
 --- after `opts` has been validated by raphael.config.validate().
 ---
 --- Responsibilities:
----   - Store validated config in M.config
----   - Initialize themes.theme_map and themes.filetype_themes
+---   - Store validated config in M.base_config
+---   - Determine active profile (from state.current_profile or config.current_profile)
+---   - Derive M.config as base_config + profile overlay
+---   - Initialize themes.theme_map and themes.filetype_themes from M.config
 ---   - Refresh installed themes list
 ---   - Load persisted state from cache (current/saved/etc.)
----   - Apply startup theme (saved theme or default_theme)
+---   - Apply startup theme (saved theme or M.config.default_theme)
 ---@param config table
 function M.setup(config)
-  M.config = config or {}
-
-  themes.filetype_themes = config.filetype_themes or {}
-  themes.theme_map = config.theme_map or {}
-
-  themes.refresh()
+  M.base_config = config or {}
 
   M.state = cache.read()
 
-  local startup_theme = M.state.saved or M.state.current or config.default_theme
+  local profiles = M.base_config.profiles or {}
+  local requested_profile = M.state.current_profile or M.base_config.current_profile
+
+  if requested_profile and type(profiles[requested_profile]) ~= "table" then
+    vim.notify(
+      string.format(
+        "raphael: configured profile '%s' not found in config.profiles; using base config",
+        requested_profile
+      ),
+      vim.log.levels.WARN
+    )
+    requested_profile = nil
+  end
+
+  M.config = make_effective_config(M.base_config, requested_profile)
+  M.state.current_profile = requested_profile
+  save_state_to_cache()
+
+  themes.filetype_themes = M.config.filetype_themes or {}
+  themes.theme_map = M.config.theme_map or {}
+
+  themes.refresh()
+
+  local startup_theme = M.state.saved or M.state.current or M.config.default_theme
 
   if startup_theme and themes.is_available(startup_theme) then
     if apply_colorscheme_raw(startup_theme) then
@@ -208,7 +266,6 @@ function M.save_state()
   save_state_to_cache()
 end
 
---- Toggle auto-apply on/off (used by :RaphaelToggleAuto and keymaps).
 function M.toggle_auto()
   M.state.auto_apply = not (M.state.auto_apply == true)
 
@@ -237,30 +294,6 @@ function M.toggle_bookmark(theme)
   end
 end
 
---- Set a quick favorite slot (0–9) to a theme.
----@param slot string|number
----@param theme string
-function M.set_quick_slot(slot, theme)
-  if not theme or theme == "" then
-    return
-  end
-
-  local s = tostring(slot)
-  cache.set_quick_slot(s, theme)
-  M.state.quick_slots = cache.get_quick_slots()
-
-  vim.notify(string.format("raphael: quick slot %s -> %s", s, theme), vim.log.levels.INFO)
-end
-
---- Get theme assigned to a quick slot.
----@param slot string|number
----@return string|nil
-function M.get_quick_slot(slot)
-  local s = tostring(slot)
-  local slots = M.state.quick_slots or cache.get_quick_slots()
-  return slots[s]
-end
-
 function M.refresh_and_reload()
   themes.refresh()
 
@@ -279,8 +312,17 @@ function M.show_status()
     saved_info = string.format(" | saved: %s", M.state.saved)
   end
 
+  local profile = M.state.current_profile
+  local profile_info = profile and (" | profile: " .. profile) or ""
+
   vim.notify(
-    string.format("raphael: current - %s%s | auto-apply: %s", M.state.current or "none", saved_info, auto_status),
+    string.format(
+      "raphael: current - %s%s | auto-apply: %s%s",
+      M.state.current or "none",
+      saved_info,
+      auto_status,
+      profile_info
+    ),
     vim.log.levels.INFO
   )
 end
@@ -354,6 +396,105 @@ end
 ---@param opts table|nil
 function M.open_picker(opts)
   return picker.open(M, opts or {})
+end
+
+--- Set a quick favorite slot (0–9) to a theme.
+---
+--- @param slot  string|number
+--- @param theme string
+function M.set_quick_slot(slot, theme)
+  slot = tostring(slot)
+  if slot == "" or not theme or theme == "" then
+    vim.notify("raphael: invalid quick slot or theme", vim.log.levels.WARN)
+    return
+  end
+
+  cache.set_quick_slot(slot, theme)
+  M.state.quick_slots = cache.get_quick_slots()
+
+  vim.notify(string.format("raphael: quick slot %s -> %s", slot, theme), vim.log.levels.INFO)
+end
+
+--- Get a quick favorite slot theme.
+---
+--- @param slot string|number
+--- @return string|nil
+function M.get_quick_slot(slot)
+  slot = tostring(slot)
+  local slots = M.state.quick_slots or {}
+  return slots[slot]
+end
+
+--- Switch active profile.
+---
+--- name:
+---   - string: must exist in base_config.profiles
+---   - nil   : clear profile (use base config)
+---
+---@param name string|nil
+function M.set_profile(name)
+  local profiles = (M.base_config and M.base_config.profiles) or {}
+
+  if name ~= nil then
+    if type(name) ~= "string" or name == "" then
+      vim.notify("raphael: profile name must be a non-empty string or nil", vim.log.levels.WARN)
+      return
+    end
+    if type(profiles[name]) ~= "table" then
+      vim.notify("raphael: unknown profile '" .. tostring(name) .. "'", vim.log.levels.WARN)
+      return
+    end
+  end
+
+  if M.state.current_profile == name then
+    vim.notify("raphael: profile already active: " .. (name or "base"), vim.log.levels.INFO)
+    return
+  end
+
+  local effective = make_effective_config(M.base_config, name)
+  M.config = effective
+  M.state.current_profile = name
+  save_state_to_cache()
+
+  themes.filetype_themes = M.config.filetype_themes or {}
+  themes.theme_map = M.config.theme_map or {}
+  themes.refresh()
+
+  local profile_label = name or "base"
+
+  local prof_theme = M.config.default_theme
+  if prof_theme and themes.is_available(prof_theme) then
+    M.apply(prof_theme, true)
+    vim.notify(
+      string.format("raphael: activated profile '%s' (default_theme = %s)", profile_label, prof_theme),
+      vim.log.levels.INFO
+    )
+  else
+    vim.notify(
+      string.format("raphael: activated profile '%s' (no default_theme applied)", profile_label),
+      vim.log.levels.INFO
+    )
+  end
+end
+
+--- Get list of available profile names (sorted).
+---
+---@return string[]
+function M.get_profiles()
+  local profiles = (M.base_config and M.base_config.profiles) or {}
+  local names = {}
+  for name, _ in pairs(profiles) do
+    table.insert(names, name)
+  end
+  table.sort(names)
+  return names
+end
+
+--- Get the currently active profile name (or nil for base config).
+---
+---@return string|nil
+function M.get_current_profile()
+  return M.state.current_profile or M.config.current_profile
 end
 
 return M

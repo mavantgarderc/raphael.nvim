@@ -11,9 +11,6 @@ local constants = require("raphael.constants")
 
 local M = {}
 
--- Internals & Locals
--- ────────────────────────────────────────────────────────────────────────
-
 local uv = vim.loop
 
 local decode_failed_once = false
@@ -48,7 +45,10 @@ local function default_state()
       index = 0,
       max_size = constants.HISTORY_MAX_SIZE,
     },
+
     quick_slots = {},
+
+    current_profile = nil,
   }
 end
 
@@ -93,7 +93,14 @@ local function normalize_state(decoded)
   base.history = base.history or {}
   base.usage = base.usage or {}
   base.collapsed = base.collapsed or {}
-  base.quick_slots = base.quick_slots or {}
+
+  if type(base.quick_slots) ~= "table" then
+    base.quick_slots = {}
+  end
+
+  if base.current_profile ~= nil and type(base.current_profile) ~= "string" then
+    base.current_profile = nil
+  end
 
   return base
 end
