@@ -32,7 +32,13 @@ local function default_state()
     previous = nil,
     auto_apply = false,
 
-    bookmarks = {},
+    -- bookmarks[scope] = { "theme1", "theme2", ... }
+    -- scope is "__global" or a profile name
+    bookmarks = {
+      __global = {},
+    },
+
+    -- history is global
     history = {},
     usage = {},
 
@@ -46,7 +52,10 @@ local function default_state()
       max_size = constants.HISTORY_MAX_SIZE,
     },
 
-    quick_slots = {},
+    -- quick_slots[scope] = { ["1"] = "theme", ... }
+    quick_slots = {
+      __global = {},
+    },
 
     current_profile = nil,
   }
@@ -89,13 +98,39 @@ local function normalize_state(decoded)
   end
   base.sort_mode = mode
 
-  base.bookmarks = base.bookmarks or {}
   base.history = base.history or {}
   base.usage = base.usage or {}
   base.collapsed = base.collapsed or {}
 
+  -- Normalize bookmarks to { __global = {...}, ... }
+  if type(base.bookmarks) ~= "table" then
+    base.bookmarks = { __global = {} }
+  else
+    if vim.islist(base.bookmarks) then
+      -- legacy flat list
+      base.bookmarks = { __global = base.bookmarks }
+    else
+      base.bookmarks.__global = base.bookmarks.__global or {}
+    end
+  end
+
+  -- Normalize quick_slots to { __global = {...}, ... }
   if type(base.quick_slots) ~= "table" then
-    base.quick_slots = {}
+    base.quick_slots = { __global = {} }
+  else
+    local has_scope = false
+    for k, v in pairs(base.quick_slots) do
+      if type(v) == "table" and (k == "__global" or type(k) == "string") then
+        has_scope = true
+        break
+      end
+    end
+    if not has_scope then
+      -- legacy flat map
+      base.quick_slots = { __global = base.quick_slots }
+    else
+      base.quick_slots.__global = base.quick_slots.__global or {}
+    end
   end
 
   if base.current_profile ~= nil and type(base.current_profile) ~= "string" then
@@ -232,28 +267,43 @@ function M.set_current(theme, save)
   M.write(state)
 end
 
---- Get bookmarks from persistent state.
+--- Get bookmarks table: scope -> list of theme names.
 ---
---- @return string[] bookmarks
-function M.get_bookmarks()
+--- @return table<string, string[]>
+function M.get_bookmarks_table()
   local state = M.read()
-  return state.bookmarks or {}
+  if type(state.bookmarks) ~= "table" then
+    return { __global = {} }
+  end
+  return state.bookmarks
 end
 
---- Toggle bookmark for a theme in persistent state.
----
---- Semantics:
----   - If theme is already bookmarked, it is removed and returns false.
----   - Otherwise, it is added (if under MAX_BOOKMARKS) and returns true.
+--- Get bookmarks list for given scope (or __global).
+---@param scope string|nil
+---@return string[]
+function M.get_bookmarks(scope)
+  scope = scope or "__global"
+  local all = M.get_bookmarks_table()
+  return all[scope] or {}
+end
+
+--- Toggle bookmark for a theme in a scope.
 ---
 --- @param theme string
---- @return boolean is_bookmarked  true if now bookmarked, false if removed or rejected
-function M.toggle_bookmark(theme)
+--- @param scope string|nil
+--- @return boolean is_bookmarked
+function M.toggle_bookmark(theme, scope)
+  scope = scope or "__global"
   local state = M.read()
-  state.bookmarks = state.bookmarks or {}
+  state.bookmarks = state.bookmarks or { __global = {} }
 
+  if type(state.bookmarks[scope]) ~= "table" then
+    state.bookmarks[scope] = {}
+  end
+
+  local list = state.bookmarks[scope]
   local idx = nil
-  for i, name in ipairs(state.bookmarks) do
+  for i, name in ipairs(list) do
     if name == theme then
       idx = i
       break
@@ -261,30 +311,34 @@ function M.toggle_bookmark(theme)
   end
 
   if idx then
-    table.remove(state.bookmarks, idx)
+    table.remove(list, idx)
+    state.bookmarks[scope] = list
     M.write(state)
     return false
   else
-    if #state.bookmarks >= constants.MAX_BOOKMARKS then
+    if #list >= constants.MAX_BOOKMARKS then
       vim.notify(
-        string.format("raphael.nvim: Max bookmarks (%d) reached!", constants.MAX_BOOKMARKS),
+        string.format("raphael.nvim: Max bookmarks (%d) reached in scope '%s'!", constants.MAX_BOOKMARKS, scope),
         vim.log.levels.WARN
       )
       return false
     end
-    table.insert(state.bookmarks, theme)
+    table.insert(list, theme)
+    state.bookmarks[scope] = list
     M.write(state)
     return true
   end
 end
 
---- Check if theme is bookmarked in persistent state.
+--- Check if theme is bookmarked in a scope.
 ---
---- @param theme string
+---@param theme string
+---@param scope string|nil
 ---@return boolean
-function M.is_bookmarked(theme)
-  local bookmarks = M.get_bookmarks()
-  for _, name in ipairs(bookmarks) do
+function M.is_bookmarked(theme, scope)
+  scope = scope or "__global"
+  local list = M.get_bookmarks(scope)
+  for _, name in ipairs(list) do
     if name == theme then
       return true
     end
@@ -427,20 +481,37 @@ local function normalize_slot(slot)
   return slot
 end
 
---- Get all quick slots map from persistent state.
+--- Get full quick slots table: scope -> { slot -> theme }.
 ---
---- @return table<string, string>
-function M.get_quick_slots()
+---@return table<string, table<string,string>>
+function M.get_quick_slots_table()
   local state = M.read()
-  return state.quick_slots or {}
+  if type(state.quick_slots) ~= "table" then
+    return { __global = {} }
+  end
+  return state.quick_slots
 end
 
---- Set a quick slot (0–9) to a theme name.
+--- Get quick slots map for a scope.
+---@param scope string|nil
+---@return table<string,string>
+function M.get_quick_slots(scope)
+  scope = scope or "__global"
+  local all = M.get_quick_slots_table()
+  if type(all[scope]) ~= "table" then
+    return {}
+  end
+  return all[scope]
+end
+
+--- Set a quick slot (0–9) to a theme name in a scope.
 ---
---- @param slot string|number
+--- @param slot  string|number
 --- @param theme string
-function M.set_quick_slot(slot, theme)
+--- @param scope string|nil
+function M.set_quick_slot(slot, theme, scope)
   slot = normalize_slot(slot)
+  scope = scope or "__global"
   if not slot then
     vim.notify("raphael.nvim: quick slot must be 0–9", vim.log.levels.WARN)
     return
@@ -451,39 +522,47 @@ function M.set_quick_slot(slot, theme)
   end
 
   local state = M.read()
-  state.quick_slots = state.quick_slots or {}
-  state.quick_slots[slot] = theme
+  state.quick_slots = state.quick_slots or { __global = {} }
+  if type(state.quick_slots[scope]) ~= "table" then
+    state.quick_slots[scope] = {}
+  end
+  state.quick_slots[scope][slot] = theme
   M.write(state)
   return theme
 end
 
---- Clear a quick slot (0–9).
+--- Clear a quick slot (0–9) in a scope.
 ---
 --- @param slot string|number
-function M.clear_quick_slot(slot)
+--- @param scope string|nil
+function M.clear_quick_slot(slot, scope)
   slot = normalize_slot(slot)
+  scope = scope or "__global"
   if not slot then
     return
   end
   local state = M.read()
-  if not state.quick_slots then
+  state.quick_slots = state.quick_slots or { __global = {} }
+  if type(state.quick_slots[scope]) ~= "table" then
     return
   end
-  state.quick_slots[slot] = nil
+  state.quick_slots[scope][slot] = nil
   M.write(state)
 end
 
---- Get a single quick slot theme.
+--- Get a single quick slot theme in a scope.
 ---
 --- @param slot string|number
+--- @param scope string|nil
 --- @return string|nil
-function M.get_quick_slot(slot)
+function M.get_quick_slot(slot, scope)
   slot = normalize_slot(slot)
+  scope = scope or "__global"
   if not slot then
     return nil
   end
-  local state = M.read()
-  return (state.quick_slots or {})[slot]
+  local slots = M.get_quick_slots(scope)
+  return slots[slot]
 end
 
 --- Push theme onto undo stack in persistent state.

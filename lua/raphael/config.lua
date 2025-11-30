@@ -28,6 +28,7 @@ local M = {}
 ---   project_overrides_filetype : boolean -- when both a filetype + project theme match, project wins if true
 ---   profiles         : table         -- name -> partial config (overlays base config)
 ---   current_profile  : string|nil    -- active profile name at startup (optional)
+---   profile_scoped_state : boolean   -- if true, bookmarks/slots are scoped per profile
 ---   sort_mode        : string        -- "alpha"|"recent"|"usage"|custom
 ---   custom_sorts     : table         -- sort_mode -> comparator(a,b) -> boolean
 ---   theme_aliases    : table         -- alias -> real theme name
@@ -74,6 +75,12 @@ M.defaults = {
   -- current_profile is the profile name to activate at startup (optional).
   profiles = {},
   current_profile = nil,
+
+  -- If true, bookmarks and quick_slots are stored per-profile:
+  --   bookmarks   = { __global = {...}, work = {...}, ... }
+  --   quick_slots = { __global = {...}, work = {...}, ... }
+  -- If false, everything uses __global only.
+  profile_scoped_state = false,
 
   sort_mode = "alpha",
   custom_sorts = {},
@@ -126,6 +133,8 @@ local SIMPLE_TYPE_SCHEMA = {
 
   profiles = { "table", "nil" },
   current_profile = { "string", "nil" },
+
+  profile_scoped_state = "boolean",
 
   sort_mode = "string",
   custom_sorts = "table",

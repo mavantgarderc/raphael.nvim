@@ -25,7 +25,8 @@ Among La Italia's finest painters, Raphael stood out for his harmony in color â€
   - `current`, `saved`, `previous` themes
   - `bookmarks`, `history`, `usage`, `sort_mode`, `collapsed` state
   - `quick_slots` (0â€“9 favorites)
-  - `current_profile` (active profile)  
+  - `current_profile` (active profile)
+  - when `profile_scoped_state = true`, bookmarks & quick_slots are stored per profile scope (with a `__global` bucket)  
     All stored in a single JSON file:
     `stdpath("data") .. "/raphael/state.json"`.
 
@@ -38,6 +39,7 @@ Among La Italia's finest painters, Raphael stood out for his harmony in color â€
     - `profiles = { work = { default_theme = "..." }, night = { ... }, ... }`
     - `current_profile = "work"` at startup.
   - Switch with `:RaphaelProfile work`, `:RaphaelProfile night`, `:RaphaelProfile base` (clear profile).
+  - Optionally scope bookmarks and quick slots per profile with `profile_scoped_state = true`.
 
 - **Quick Favorite Slots (0â€“9)**:
   - In picker:
@@ -197,6 +199,9 @@ return {
 
     -- Active profile at startup (or nil for base config)
     current_profile = "work",
+
+    -- If true, bookmarks & quick_slots are stored per-profile (with a __global fallback)
+    profile_scoped_state = false,
 
     icons = {
       -- sections

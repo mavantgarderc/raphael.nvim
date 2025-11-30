@@ -231,7 +231,7 @@ function M.attach(ctx, fns)
   end
 
   local function refresh_bookmarks_set()
-    ctx.bookmarks = require("raphael.picker.bookmarks").build_set(state)
+    ctx.bookmarks = require("raphael.picker.bookmarks").build_set(state, core)
   end
 
   local function jump_to_theme(theme)
