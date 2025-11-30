@@ -11,18 +11,47 @@ Among La Italia's finest painters, Raphael stood out for his harmony in color �
 - **Grouped Themes**: Organize themes into groups (e.g., "justice-league", "lantern-corps") with collapse/expand functionality.  
   Supports **nested groups** in `theme_map` (tables inside tables), with per‑group cursor memory.
 
-- **Auto-Apply by Filetype**: Automatically switch themes based on buffer filetype (e.g., "kanagawa-paper-ink" for Lua).  
-  Auto-applied themes are **temporary** and do not participate in manual history/undo.
+- **Auto-Apply by Filetype & Project**:
+  - Automatically switch themes based on:
+    - Buffer **filetype** via `filetype_themes`.
+    - **Project root** via `project_themes` (match by absolute path prefix; longest prefix wins).
+  - Priority flags:
+    - `project_overrides_filetype = true` → project wins when both match.
+    - `filetype_overrides_project = true` → filetype wins when both match.
+  - Integrates with **oil.nvim** (uses `oil.get_current_dir()` for project detection).  
+    Auto-applied themes are **temporary** and do not participate in manual history/undo.
 
 - **Persistence**: Saves manually selected themes across sessions:
   - `current`, `saved`, `previous` themes
-  - `bookmarks`, `history`, `usage`, `sort_mode`, `collapsed` state  
+  - `bookmarks`, `history`, `usage`, `sort_mode`, `collapsed` state
+  - `quick_slots` (0–9 favorites)
+  - `current_profile` (active profile)  
     All stored in a single JSON file:
     `stdpath("data") .. "/raphael/state.json"`.
 
 - **Bookmarks and History**: Bookmark favorites and track recent themes.
   - Dedicated **Bookmarks** and **Recent** sections at the top of the picker.
   - Full undo/redo stack with `u`, `<C-r>`, `H`, `J`, `T` in the picker and `:RaphaelUndo` / `:RaphaelRedo` commands.
+
+- **Profiles (work / night / presentation)**:
+  - Define multiple theme “profiles” as partial configs:
+    - `profiles = { work = { default_theme = "..." }, night = { ... }, ... }`
+    - `current_profile = "work"` at startup.
+  - Switch with `:RaphaelProfile work`, `:RaphaelProfile night`, `:RaphaelProfile base` (clear profile).
+
+- **Quick Favorite Slots (0–9)**:
+  - In picker:
+    - `m0`..`m9` → assign current theme to quick slot `0`..`9`.
+    - `0`..`9` → jump to that slot’s theme in the picker and preview it.
+  - Stored in state as `quick_slots = { ["1"] = "kanagawa-paper-edo", ... }`.
+
+- **Compare with Current**:
+  - In picker:
+    - `C` → enter compare mode between:
+      - Base = current active theme.
+      - Candidate = theme under cursor.
+    - Move with `j`/`k` to change candidate.
+    - Press `C` again to flip between **base ⇄ candidate** in the preview.
 
 - **Preview Palette**: Visual color blocks for key highlight groups during selection.
   - A top mini-bar of colored blocks representing `Normal`, `Comment`, `String`, etc.
@@ -34,6 +63,8 @@ Among La Italia's finest painters, Raphael stood out for his harmony in color �
 - **Session Support**: Integrates with session managers for theme restoration via helpers like `raphael.extras.session`.
 
 - **Configurable Icons**: All icons used in the picker (bookmarks, group arrows, history markers, etc.) are configurable via `opts.icons` (see below).
+
+---
 
 ## Installation
 
@@ -53,7 +84,9 @@ return {
 }
 ```
 
-### Configuration
+---
+
+## Configuration
 
 Configure in your plugin spec's opts table. Examples below:
 
@@ -65,7 +98,11 @@ return {
 
   keys = {
     { "<leader>tp", raphael.open_picker,        desc = "Raphael: Configured themes" },
-    { "<leader>t/", function() raphael.open_picker({ exclude_configured = true }) end, desc = "Raphael: All other themes" },
+    {
+      "<leader>t/",
+      function() raphael.open_picker({ exclude_configured = true }) end,
+      desc = "Raphael: All other themes",
+    },
     { "<leader>ta", raphael.toggle_auto,        desc = "Raphael: Toggle auto-apply" },
     { "<leader>tR", raphael.refresh_and_reload, desc = "Raphael: Refresh themes" },
     { "<leader>ts", raphael.show_status,        desc = "Raphael: Show status" },
@@ -117,15 +154,19 @@ return {
     -- Match by directory prefix (longest prefix wins).
     -- Use absolute paths or paths with ~; they’re normalized.
     project_themes = {
-
       -- Example:
-      ["~/projects/work"] = "kanagawa-paper-edo",
+      ["~/projects/work"]      = "kanagawa-paper-edo",
       ["~/projects/dc-themes"] = "kanagawa-paper-sunset",
 
       -- e.g. your dotfiles repo:
       ["~/dotfiles"] = "detox-ink",
-      -- Optional right-side code sample preview
     },
+
+    -- Priority when both a project and a filetype mapping match:
+    --   project_overrides_filetype = true  → project wins
+    --   filetype_overrides_project = true  → filetype wins
+    project_overrides_filetype = true,
+    filetype_overrides_project = false,
 
     sample_preview = {
       enabled       = true,
@@ -141,7 +182,22 @@ return {
 
     history_max_size = 13,
 
-    -- Icon overrides (all keys optional)
+    profiles = {
+      work = {
+        default_theme = "kanagawa-paper-ink",
+        -- you can also override filetype_themes/project_themes per profile
+      },
+      night = {
+        default_theme = "detox-ink",
+      },
+      presentation = {
+        default_theme = "kanagawa-paper-obsidian",
+      },
+    },
+
+    -- Active profile at startup (or nil for base config)
+    current_profile = "work",
+
     icons = {
       -- sections
       -- HEADER           = "🎨 Colorschemes",
@@ -164,8 +220,8 @@ return {
       vim.schedule(function()
         local ok, lualine = pcall(require, "lualine")
         if ok then
-          local cfg        = lualine.get_config()
-          cfg.options      = cfg.options or {}
+          local cfg = lualine.get_config()
+          cfg.options = cfg.options or {}
           cfg.options.theme = "auto"
           lualine.setup(cfg)
         end
@@ -180,68 +236,121 @@ return {
 }
 ```
 
-### Keymaps
+---
 
-Global (normal mode, with `leader = "<leader>t"`):
+## Keymaps
+
+### Global (normal mode, with `leader = "<leader>t"`)
 
 - `<leader>tp`: Open picker for configured themes
 - `<leader>t/`: Open picker for other installed themes
 - `<leader>ta`: Toggle auto-apply
 - `<leader>tR`: Refresh themes and reload current
 - `<leader>ts`: Show status
-- `<leader>t<`: Previous theme
-- `<leader>t>`: Next theme
+- `<leader>t<` / `<leader>t>`: Previous / next theme (via `mappings.previous` / `mappings.next`)
 
-Inside picker:
+### Inside picker
 
-- `<CR>`: Apply theme
-- `/`: Search
+#### Core actions
+
+- `<CR>`: Select theme
+- `q` / `<Esc>`: Quit (revert theme)
+- `/`: Search themes
+- `a`: Clear search / show all themes
 - `b`: Toggle bookmark
 - `c`: Collapse/expand group
-- `q` / `<Esc>`: Cancel and revert to previous theme
+- `s`: Cycle sort mode
+- `S`: Toggle sorting on/off
+- `R`: Toggle reverse sorting (descending)
 
-Navigation & sections:
+#### Navigation & sections
 
-- `<C-l>`/`<C-h>`: Jump to inner/outer group header",
-- `<C-j>` / `<C-k>` & `[g` / `]g`: Next/previous group header
-- `[b` / `]b`: Jump to prev/next bookmark (skips bookmarks section when needed)
-- `[r` / `]r`: Jump to prev/next history state (skips recent section)
-- `gg` / `G`: Top / bottom
-- `<C-u>` / `<C-d>`: Half page up/down
+- `j` / `k`: Navigate (wraps around)
+- `<C-j>` / `<C-k>`: Jump to next/prev group header (wraps)
+- `<C-l>` / `<C-h>`: Jump into / out of group (header/child)
+- `[g` / `]g`: Jump to prev/next group header (wraps)
+- `gg` / `G`: Go to top / bottom
+- `<C-u>` / `<C-d>`: Half-page up/down
 - `zt` / `zz` / `zb`: Scroll current line to top/center/bottom
-- `ga`: Jump to first theme
+- `ga`: Jump to first theme (All)
+- `gb`: Jump to Bookmarks section
+- `gr`: Jump to Recent section
+- `[b` / `]b`: Jump to prev/next bookmark (skips Bookmark group section)
+- `[r` / `]r`: Jump to prev/next history state (skips Recent group section)
 
-History & random:
+#### History & random
 
-- `u` / `<C-r>`: Undo/redo theme change
-- `H`: Show history snapshot
-- `J`: Jump to history position
-- `T`: Show quick stats
-- `r`: Random theme
+- `u`: Undo theme change
+- `<C-r>`: Redo theme change
+- `H`: Show full history
+- `J`: Jump to a history position
+- `T`: Show quick history stats
+- `r`: Apply random theme
 
-Preview:
+#### Preview & compare
 
-- `i` / `I`: Toggle and iterate inline code sample languages
+- `i`: Show code sample preview / iterate languages forward
+- `I`: Iterate languages backward
+- `C`: **Compare candidate with current theme** in preview:
+  - First `C`: base = current active theme, candidate = line under cursor.
+  - Move with `j`/`k` to change candidate.
+  - Further `C`: toggle between showing base ⇄ candidate.
 
-Misc:
+#### Quick favorite slots
 
-- `?`: Show help
+- `m0`..`m9`: Assign current theme to quick slot 0..9.
+- `0`..`9`: Jump to that slot’s theme in the picker and preview it.
 
-### Commands
+#### Help
 
-- `:RaphaelPicker`: Open configured picker
-- `:RaphaelPickerAll`: Open other themes picker
-- `:RaphaelApply <theme>`: Apply a theme (supports aliases)
-- `:RaphaelToggleAuto`: Toggle auto-apply
-- `:RaphaelRefresh`: Refresh and reload
-- `:RaphaelStatus`: Show status
-- `:RaphaelHelp`: Show help
-- `:RaphaelHistory`: Show theme history
-- `:RaphaelUndo`: Undo last theme change
-- `:RaphaelRedo`: Redo last undone theme change
-- `:RaphaelRandom`: Apply a random theme
+- `?`: Show this help.
 
-Picker internals (new module paths):
+---
+
+## Commands
+
+- `:RaphaelPicker`
+  Open picker (configured themes).
+
+- `:RaphaelPickerAll`
+  Open picker (all except configured).
+
+- `:RaphaelApply {theme}`
+  Apply a theme by name (supports aliases).
+
+- `:RaphaelToggleAuto`
+  Toggle auto-apply by filetype/project.
+
+- `:RaphaelRefresh`
+  Refresh theme list and reload current.
+
+- `:RaphaelStatus`
+  Show current theme status (includes profile name if any).
+
+- `:RaphaelHelp`
+  Show Raphael help.
+
+- `:RaphaelHistory`
+  Show full theme history.
+
+- `:RaphaelUndo` / `:RaphaelRedo`
+  Undo / redo last theme change.
+
+- `:RaphaelRandom`
+  Apply a random theme.
+
+- `:RaphaelBookmarkToggle`
+  Toggle bookmark for the theme under the cursor (opens picker if needed).
+
+- `:RaphaelProfile [name]`
+  Manage profiles:
+  - `:RaphaelProfile` → list all profiles and mark current with `*`.
+  - `:RaphaelProfile work` / `night` / `presentation` → switch to that profile.
+  - `:RaphaelProfile base` → clear profile (use base config only).
+
+---
+
+## Picker internals (module paths)
 
 ```vim
 :lua require("raphael.picker.ui").toggle_debug()
