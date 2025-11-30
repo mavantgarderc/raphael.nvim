@@ -15,6 +15,8 @@ local M = {}
 local themes = require("raphael.themes")
 local C = require("raphael.constants")
 
+local GROUP_ALIAS_REVERSE = {}
+
 --- Parse a group header line of the form:
 ---   "<icon> <group_name> (N)"
 ---
@@ -26,7 +28,10 @@ function M.parse_line_header(line)
     return nil
   end
   captured = captured:gsub("^%s+", ""):gsub("%s+$", "")
-  return captured ~= "" and captured or nil
+  if captured == "" then
+    return nil
+  end
+  return GROUP_ALIAS_REVERSE[captured] or captured
 end
 
 --- Parse a theme name from a picker line, resolving aliases.
@@ -53,8 +58,10 @@ function M.parse_line_theme(core, line)
   local cfg = core.config or {}
   local aliases = cfg.theme_aliases or {}
   local reverse_aliases = {}
-  for alias, real in pairs(aliases) do
-    reverse_aliases[alias] = real
+  for real, alias in pairs(aliases) do
+    if type(real) == "string" and type(alias) == "string" then
+      reverse_aliases[alias] = real
+    end
   end
 
   local last = line:match("([%w_%-]+)%s*$")
@@ -162,7 +169,7 @@ local function render_internal(ctx)
         ctx.last_cursor[current_group] = current_line
       else
         for i = current_line, 1, -1 do
-          local maybe = M.parse_line_header(before_lines[i])
+          local maybe = M.parse_line_header(before_lines[i] or "")
           if maybe then
             current_group = maybe
             break
@@ -178,6 +185,14 @@ local function render_internal(ctx)
   local cfg = core.config
   local show_bookmarks = cfg.bookmark_group ~= false
   local show_recent = cfg.recent_group ~= false
+
+  local group_aliases = cfg.group_aliases or {}
+  GROUP_ALIAS_REVERSE = {}
+  for real, alias in pairs(group_aliases) do
+    if type(real) == "string" and type(alias) == "string" and alias ~= "" then
+      GROUP_ALIAS_REVERSE[alias] = real
+    end
+  end
 
   local indent_width = tonumber(cfg.group_indent) or 2
   if indent_width < 0 then
@@ -212,7 +227,7 @@ local function render_internal(ctx)
   local sort_mode = state.sort_mode or cfg.sort_mode or "alpha"
 
   local disable_sorting = ctx.flags.disable_sorting
-  local reverse_sorting = ctx.flags.reverse_sorting
+  private_reverse_sorting = ctx.flags.reverse_sorting
 
   --- Sort a flat list of theme names according to current sort mode.
   --- Mutates `filtered` in-place.
@@ -224,7 +239,7 @@ local function render_internal(ctx)
     end
 
     local function cmp_alpha(a, b)
-      if reverse_sorting then
+      if private_reverse_sorting then
         return a:lower() > b:lower()
       end
       return a:lower() < b:lower()
@@ -233,7 +248,7 @@ local function render_internal(ctx)
     local function cmp_recent(a, b)
       local idx_a = vim.fn.index(state.history or {}, a) or -1
       local idx_b = vim.fn.index(state.history or {}, b) or -1
-      if reverse_sorting then
+      if private_reverse_sorting then
         return idx_a < idx_b
       end
       return idx_a > idx_b
@@ -242,7 +257,7 @@ local function render_internal(ctx)
     local function cmp_usage(a, b)
       local count_a = (state.usage or {})[a] or 0
       local count_b = (state.usage or {})[b] or 0
-      if reverse_sorting then
+      if private_reverse_sorting then
         return count_a < count_b
       end
       return count_a > count_b
@@ -260,7 +275,7 @@ local function render_internal(ctx)
     local custom_func = custom_sorts[sort_mode]
     if custom_func then
       table.sort(filtered, custom_func)
-      if reverse_sorting then
+      if private_reverse_sorting then
         for i = 1, math.floor(#filtered / 2) do
           filtered[i], filtered[#filtered - i + 1] = filtered[#filtered - i + 1], filtered[i]
         end
@@ -391,9 +406,10 @@ local function render_internal(ctx)
     local header_key = group_name
     local is_collapsed = ctx.collapsed[header_key] == true
     local header_icon = is_collapsed and C.ICON.GROUP_COLLAPSED or C.ICON.GROUP_EXPANDED
+    local display_group = group_aliases[group_name] or group_name
     local summary = string.format("(%d)", #leaf_themes)
 
-    table.insert(lines, string.format("%s%s %s %s", indent, header_icon, group_name, summary))
+    table.insert(lines, string.format("%s%s %s %s", indent, header_icon, display_group, summary))
     table.insert(ctx.header_lines, #lines)
 
     if is_collapsed then
@@ -597,7 +613,6 @@ local function render_internal(ctx)
         for i, line in ipairs(lines) do
           local t = M.parse_line_theme(core, line)
           if t == current_theme then
-            -- find this line's group in the new buffer
             local line_group
             for j = i, 1, -1 do
               local maybe = M.parse_line_header(lines[j] or "")

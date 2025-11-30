@@ -31,9 +31,11 @@ local M = {}
 ---   profile_scoped_state : boolean   -- if true, bookmarks/slots are scoped per profile
 ---   sort_mode        : string        -- "alpha"|"recent"|"usage"|custom
 ---   custom_sorts     : table         -- sort_mode -> comparator(a,b) -> boolean
----   theme_aliases    : table         -- alias -> real theme name
+---   theme_aliases    : table         -- real_theme_name -> display label
+---   group_aliases    : table         -- real_group_name -> display label for headers
 ---   history_max_size : integer       -- in-memory undo/redo size (extras/history)
 ---   sample_preview   : table         -- code sample preview config
+---   group_indent     : integer       -- indentation width (spaces) per depth level (default: 2)
 ---   icons            : table         -- icon overrides, merged into constants.ICON
 ---   on_apply         : function      -- hook after theme applied
 ---   enable_*         : booleans      -- feature toggles
@@ -86,6 +88,7 @@ M.defaults = {
   custom_sorts = {},
 
   theme_aliases = {},
+  group_aliases = {},
 
   history_max_size = 13,
 
@@ -142,6 +145,7 @@ local SIMPLE_TYPE_SCHEMA = {
   custom_sorts = "table",
 
   theme_aliases = "table",
+  group_aliases = "table",
 
   history_max_size = "number",
 
@@ -388,14 +392,28 @@ function M.validate(user)
     cfg.theme_aliases = {}
   else
     local cleaned = {}
-    for alias, real in pairs(cfg.theme_aliases) do
-      if type(alias) == "string" and type(real) == "string" and real ~= "" then
-        cleaned[alias] = real
+    for real, alias in pairs(cfg.theme_aliases) do
+      if type(real) == "string" and type(alias) == "string" and alias ~= "" then
+        cleaned[real] = alias
       else
-        warn(string.format("Invalid theme_aliases entry (%s = %s), ignoring", tostring(alias), tostring(real)))
+        warn(string.format("Invalid theme_aliases entry (%s = %s), ignoring", tostring(real), tostring(alias)))
       end
     end
     cfg.theme_aliases = cleaned
+  end
+
+  if type(cfg.group_aliases) ~= "table" then
+    cfg.group_aliases = {}
+  else
+    local cleaned = {}
+    for real, alias in pairs(cfg.group_aliases) do
+      if type(real) == "string" and type(alias) == "string" and alias ~= "" then
+        cleaned[real] = alias
+      else
+        warn(string.format("Invalid group_aliases entry (%s = %s), ignoring", tostring(real), tostring(alias)))
+      end
+    end
+    cfg.group_aliases = cleaned
   end
 
   if type(cfg.history_max_size) ~= "number" or cfg.history_max_size < 1 then
