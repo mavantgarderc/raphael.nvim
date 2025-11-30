@@ -197,6 +197,11 @@ return {
       },
     },
 
+    workspace_profiles = {
+      ["~/projects/work"] = "work",
+      ["~/slides"]        = "presentation",
+    },
+
     -- Active profile at startup (or nil for base config)
     current_profile = "work",
 

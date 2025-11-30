@@ -33,7 +33,7 @@ local history = require("raphael.extras.history")
 ---   - :RaphaelRedo
 ---   - :RaphaelRandom
 ---   - :RaphaelBookmarkToggle
----   - :RaphaelProfile [name]
+---   - :RaphaelProfile [name] [edit]
 ---
 ---@param core table  # usually require("raphael.core")
 function M.setup(core)
@@ -170,7 +170,6 @@ function M.setup(core)
 
   local function list_profiles()
     local base_cfg = core.base_config or {}
-    local cfg = core.config or {}
     local profiles = base_cfg.profiles or {}
     local current = core.get_current_profile and core.get_current_profile() or nil
 
@@ -276,7 +275,7 @@ function M.setup(core)
       return
     end
 
-    local apply_default = not bang
+    local apply_default = not bang -- :RaphaelProfile! name => don't apply default theme
 
     if name ~= nil and type(profiles[name]) ~= "table" then
       vim.notify(string.format("raphael: unknown profile '%s'", name), vim.log.levels.WARN)
