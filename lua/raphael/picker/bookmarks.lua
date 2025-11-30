@@ -20,20 +20,30 @@ local M = {}
 ---@return table<string, boolean> set  # map: theme_name -> true
 function M.build_set(state, core)
   local set = {}
+  local raw = state and state.bookmarks
 
-  if type(state.bookmarks) ~= "table" then
+  if type(raw) ~= "table" then
     return set
   end
 
-  local scope = "__global"
+  local scoped_list
   if core and core.config and core.config.profile_scoped_state then
+    local scope = "__global"
     local profile = (core.state and core.state.current_profile) or core.config.current_profile
     if type(profile) == "string" and profile ~= "" then
       scope = profile
     end
+    scoped_list = raw[scope] or raw.__global
   end
 
-  local scoped_list = state.bookmarks[scope] or state.bookmarks.__global or {}
+  if scoped_list == nil then
+    if vim.islist(raw) then
+      scoped_list = raw
+    else
+      scoped_list = raw.__global or {}
+    end
+  end
+
   if type(scoped_list) ~= "table" then
     return set
   end

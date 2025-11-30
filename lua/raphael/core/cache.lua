@@ -313,20 +313,21 @@ function M.toggle_bookmark(theme, scope)
   if idx then
     table.remove(list, idx)
     state.bookmarks[scope] = list
+
     M.write(state)
-    return false
+    return false, state.bookmarks
   else
     if #list >= constants.MAX_BOOKMARKS then
       vim.notify(
         string.format("raphael.nvim: Max bookmarks (%d) reached in scope '%s'!", constants.MAX_BOOKMARKS, scope),
         vim.log.levels.WARN
       )
-      return false
+      return false, nil
     end
     table.insert(list, theme)
     state.bookmarks[scope] = list
     M.write(state)
-    return true
+    return true, state.bookmarks
   end
 end
 

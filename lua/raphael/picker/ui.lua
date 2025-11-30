@@ -86,10 +86,11 @@ local function log(level, msg, data)
     return
   end
   local prefix = string.format("[Raphael:%s]", level)
+  local lvl = vim.log.levels[level] or vim.log.levels.INFO
   if data then
-    vim.notify(string.format("%s %s: %s", prefix, msg, vim.inspect(data)), vim.log.levels[level])
+    vim.notify(string.format("%s %s: %s", prefix, msg, vim.inspect(data)), lvl)
   else
-    vim.notify(string.format("%s %s", prefix, msg), vim.log.levels[level])
+    vim.notify(string.format("%s %s", prefix, msg), lvl)
   end
 end
 
@@ -145,6 +146,10 @@ local function close_picker(revert)
   ctx.bookmarks = {}
   ctx.flags.disable_sorting = false
   ctx.flags.reverse_sorting = false
+
+  if ctx.picker_type and ctx.instances then
+    ctx.instances[ctx.picker_type] = false
+  end
 
   log("DEBUG", "Picker closed successfully")
 end
@@ -264,7 +269,8 @@ local function init_context(core, opts)
   ctx.collapsed["__bookmarks"] = ctx.collapsed["__bookmarks"] or false
   ctx.collapsed["__recent"] = ctx.collapsed["__recent"] or false
 
-  ctx.bookmarks = bookmarks_mod.build_set(ctx.state)
+  ctx.bookmarks = bookmarks_mod.build_set(ctx.state, core)
+
   ctx.header_lines = {}
   ctx.last_cursor = {}
   ctx.search_query = ""

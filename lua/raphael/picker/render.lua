@@ -111,7 +111,7 @@ end
 ---
 --- Expects ctx with:
 ---   ctx.buf, ctx.win, ctx.core, ctx.state
----   ctx.collapsed, ctx.bookmarks
+---   ctx.collapsed, ctx.bookmarks (set: theme -> true)
 ---   ctx.search_query : string|nil
 ---   ctx.search_scope : string|nil
 ---   ctx.header_lines (out), ctx.last_cursor (in/out)
@@ -250,11 +250,22 @@ local function render_internal(ctx)
   local search_scope = ctx.search_scope
   local has_search = (search_query ~= "") or (search_scope ~= nil)
   local collapsed = ctx.collapsed
-  local bookmarks = ctx.bookmarks
+  local bookmarks = ctx.bookmarks or {}
 
   if show_bookmarks then
+    local bookmark_themes = {}
+    for t, is_marked in pairs(bookmarks) do
+      if is_marked then
+        table.insert(bookmark_themes, t)
+      end
+    end
+
+    table.sort(bookmark_themes, function(a, b)
+      return a:lower() < b:lower()
+    end)
+
     local bookmark_filtered = {}
-    for _, t in ipairs(state.bookmarks or {}) do
+    for _, t in ipairs(bookmark_themes) do
       if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
         table.insert(bookmark_filtered, t)
       end
@@ -263,16 +274,14 @@ local function render_internal(ctx)
     if #bookmark_filtered > 0 then
       local group = "__bookmarks"
       local bookmark_icon = collapsed[group] and C.ICON.GROUP_COLLAPSED or C.ICON.GROUP_EXPANDED
-      table.insert(lines, bookmark_icon .. " Bookmarks (" .. #state.bookmarks .. ")")
+      table.insert(lines, bookmark_icon .. " Bookmarks (" .. #bookmark_themes .. ")")
       table.insert(ctx.header_lines, #lines)
 
       if not collapsed[group] then
-        local visible_count = math.max(1, math.floor(#bookmark_filtered))
-        for i = 1, visible_count do
-          local t = bookmark_filtered[i]
+        for _, t in ipairs(bookmark_filtered) do
           local display = cfg.theme_aliases[t] or t
           local warning = themes.is_available(t) and "" or C.ICON.WARN
-          local b = " "
+          local b = C.ICON.BOOKMARK
           local s = (state.current == t) and C.ICON.CURRENT_ON or C.ICON.CURRENT_OFF
           table.insert(lines, "  " .. warning .. b .. s .. display)
         end
@@ -295,9 +304,7 @@ local function render_internal(ctx)
       table.insert(ctx.header_lines, #lines)
 
       if not collapsed[group] then
-        local visible_count = math.max(1, math.floor(#recent_filtered))
-        for i = 1, visible_count do
-          local t = recent_filtered[i]
+        for _, t in ipairs(recent_filtered) do
           local display = cfg.theme_aliases[t] or t
           local warning = themes.is_available(t) and "" or C.ICON.WARN
           local b = bookmarks[t] and C.ICON.BOOKMARK or " "

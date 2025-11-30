@@ -266,7 +266,31 @@ function M.toggle_bookmark(theme)
   local scope = get_scope_key()
   local is_bookmarked = cache.toggle_bookmark(theme, scope)
 
-  M.state.bookmarks = cache.get_bookmarks_table()
+  M.state.bookmarks = M.state.bookmarks or { __global = {} }
+  if type(M.state.bookmarks[scope]) ~= "table" then
+    M.state.bookmarks[scope] = {}
+  end
+  local list = M.state.bookmarks[scope]
+
+  if is_bookmarked then
+    local found = false
+    for _, name in ipairs(list) do
+      if name == theme then
+        found = true
+        break
+      end
+    end
+    if not found then
+      table.insert(list, theme)
+    end
+  else
+    for i, name in ipairs(list) do
+      if name == theme then
+        table.remove(list, i)
+        break
+      end
+    end
+  end
 
   local scope_msg = (scope ~= "__global") and (" in profile '" .. scope .. "'") or ""
   if is_bookmarked then
