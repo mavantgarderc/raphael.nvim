@@ -513,20 +513,33 @@ function M.attach(ctx, fns)
     M.highlight_current_line(ctx)
   end, { buffer = buf, desc = "Previous line (wrap to bottom)" })
 
+  local last_group_name = nil
+
+  local function set_last_group_from_line(line)
+    local g = render.parse_line_header(line or "")
+    if g then
+      last_group_name = g
+    end
+  end
+
   map("n", "<C-j>", function()
     if #ctx.header_lines == 0 then
       return
     end
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local cur = vim.api.nvim_win_get_cursor(win)[1]
     for _, ln in ipairs(ctx.header_lines) do
       if ln > cur then
         vim.api.nvim_win_set_cursor(win, { ln, 0 })
+        set_last_group_from_line(lines[ln] or "")
         M.highlight_current_line(ctx)
         return
       end
     end
     if #ctx.header_lines > 0 then
-      vim.api.nvim_win_set_cursor(win, { ctx.header_lines[1], 0 })
+      local ln = ctx.header_lines[1]
+      vim.api.nvim_win_set_cursor(win, { ln, 0 })
+      set_last_group_from_line(lines[ln] or "")
       M.highlight_current_line(ctx)
     end
   end, { buffer = buf, desc = "Next group header" })
@@ -535,15 +548,76 @@ function M.attach(ctx, fns)
     if #ctx.header_lines == 0 then
       return
     end
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local cur = vim.api.nvim_win_get_cursor(win)[1]
     for i = #ctx.header_lines, 1, -1 do
       if ctx.header_lines[i] < cur then
-        vim.api.nvim_win_set_cursor(win, { ctx.header_lines[i], 0 })
+        local ln = ctx.header_lines[i]
+        vim.api.nvim_win_set_cursor(win, { ln, 0 })
+        set_last_group_from_line(lines[ln] or "")
         M.highlight_current_line(ctx)
         return
       end
     end
   end, { buffer = buf, desc = "Previous group header" })
+
+  map("n", "gn", function()
+    if #ctx.header_lines == 0 then
+      return
+    end
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(win)[1]
+    local target
+    for _, ln in ipairs(ctx.header_lines) do
+      if ln > cur then
+        target = ln
+        break
+      end
+    end
+    if not target then
+      target = ctx.header_lines[1]
+    end
+    vim.api.nvim_win_set_cursor(win, { target, 0 })
+    set_last_group_from_line(lines[target] or "")
+    M.highlight_current_line(ctx)
+  end, { buffer = buf, desc = "Next group header (gn)" })
+
+  map("n", "gp", function()
+    if #ctx.header_lines == 0 then
+      return
+    end
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local cur = vim.api.nvim_win_get_cursor(win)[1]
+    local target
+    for i = #ctx.header_lines, 1, -1 do
+      if ctx.header_lines[i] < cur then
+        target = ctx.header_lines[i]
+        break
+      end
+    end
+    if not target then
+      target = ctx.header_lines[#ctx.header_lines]
+    end
+    vim.api.nvim_win_set_cursor(win, { target, 0 })
+    set_last_group_from_line(lines[target] or "")
+    M.highlight_current_line(ctx)
+  end, { buffer = buf, desc = "Previous group header (gp)" })
+
+  map("n", "g.", function()
+    if not last_group_name or last_group_name == "" then
+      return
+    end
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    for _, ln in ipairs(ctx.header_lines) do
+      local hdr = render.parse_line_header(lines[ln] or "")
+      if hdr == last_group_name then
+        vim.api.nvim_win_set_cursor(win, { ln, 0 })
+        vim.cmd("normal! zz")
+        M.highlight_current_line(ctx)
+        return
+      end
+    end
+  end, { buffer = buf, desc = "Jump to last visited group" })
 
   map("n", "gg", function()
     vim.api.nvim_win_set_cursor(win, { 1, 0 })

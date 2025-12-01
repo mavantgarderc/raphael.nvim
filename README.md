@@ -124,8 +124,13 @@ return {
     },
 
     theme_aliases = {
-      ["evergardern-fall"] = "Garden-Fall",
+      ["kanagawa-paper-sunset"] = "Kanagawa (Paper SUNSET)",
     },
+    group_aliases = {
+      dc = "Distant Colors",
+      emotional_entities = "Emotional Entities",
+    },
+
 
     default_theme = "kanagawa-paper-ink",
 
