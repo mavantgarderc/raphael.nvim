@@ -694,7 +694,7 @@ function M.attach(ctx, fns)
     M.highlight_current_line(ctx)
   end, { buffer = buf, desc = "Go to bottom" })
 
-  map("n", "<C*u>", function()
+  map("n", "<C-u>", function()
     local height = vim.api.nvim_win_get_height(win)
     local cur = vim.api.nvim_win_get_cursor(win)[1]
     local target = math.max(1, cur - math.floor(height / 2))

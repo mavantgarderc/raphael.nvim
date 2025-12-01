@@ -226,8 +226,11 @@ local function render_internal(ctx)
   local is_display_grouped = not vim.islist(display_map)
   local sort_mode = state.sort_mode or cfg.sort_mode or "alpha"
 
-  local disable_sorting = ctx.flags.disable_sorting
-  private_reverse_sorting = ctx.flags.reverse_sorting
+  local flags = ctx.flags or {}
+  local disable_sorting = flags.disable_sorting
+  local private_reverse_sorting = flags.reverse_sorting
+  local only_bookmarks = flags.only_bookmarks
+  local flat_view = flags.flat_view
 
   --- Sort a flat list of theme names according to current sort mode.
   --- Mutates `filtered` in-place.
@@ -330,7 +333,10 @@ local function render_internal(ctx)
   if show_recent then
     local recent_filtered = {}
     for _, t in ipairs(state.history or {}) do
-      if search_query == "" or t:lower():find(search_query:lower(), 1, true) then
+      if
+        (not only_bookmarks or bookmarks[t])
+        and (search_query == "" or t:lower():find(search_query:lower(), 1, true))
+      then
         table.insert(recent_filtered, t)
       end
     end
@@ -338,7 +344,7 @@ local function render_internal(ctx)
     if #recent_filtered > 0 then
       local group = "__recent"
       local recent_icon = collapsed[group] and C.ICON.GROUP_COLLAPSED or C.ICON.GROUP_EXPANDED
-      table.insert(lines, recent_icon .. " Recent (" .. #state.history .. ")")
+      table.insert(lines, recent_icon .. " Recent (" .. #recent_filtered .. ")")
       table.insert(ctx.header_lines, #lines)
 
       if not collapsed[group] then
@@ -380,11 +386,23 @@ local function render_internal(ctx)
       return
     end
 
+    if only_bookmarks and #list_items > 0 then
+      local filtered = {}
+      for _, t in ipairs(list_items) do
+        if bookmarks[t] then
+          table.insert(filtered, t)
+        end
+      end
+      list_items = filtered
+    end
+
     local leaf_themes = {}
     local function collect_leaves(n)
       local t = type(n)
       if t == "string" then
-        table.insert(leaf_themes, n)
+        if not only_bookmarks or bookmarks[n] then
+          table.insert(leaf_themes, n)
+        end
       elseif t == "table" then
         if vim.islist(n) then
           for _, v in ipairs(n) do
@@ -454,7 +472,7 @@ local function render_internal(ctx)
       local function collect_flat(node, path)
         local t = type(node)
         if t == "string" then
-          if path_has_scope(path) and not seen[node] then
+          if path_has_scope(path) and not seen[node] and (not only_bookmarks or bookmarks[node]) then
             table.insert(flat_candidates, node)
             seen[node] = true
           end
@@ -479,7 +497,12 @@ local function render_internal(ctx)
 
       collect_flat(display_map, {})
     else
-      flat_candidates = display_map
+      flat_candidates = {}
+      for _, t in ipairs(display_map) do
+        if not only_bookmarks or bookmarks[t] then
+          table.insert(flat_candidates, t)
+        end
+      end
     end
 
     local flat_filtered
@@ -506,8 +529,38 @@ local function render_internal(ctx)
       table.insert(lines, string.format("%s%s %s %s", warning, b, s, display))
     end
   else
-    if not is_display_grouped then
-      local flat_candidates = display_map
+    if flat_view then
+      local flat_candidates = {}
+      if is_display_grouped then
+        local seen = {}
+        local function collect_flat(node)
+          local t = type(node)
+          if t == "string" then
+            if (not seen[node]) and (not only_bookmarks or bookmarks[node]) then
+              table.insert(flat_candidates, node)
+              seen[node] = true
+            end
+          elseif t == "table" then
+            if vim.islist(node) then
+              for _, v in ipairs(node) do
+                collect_flat(v)
+              end
+            else
+              for _, v in pairs(node) do
+                collect_flat(v)
+              end
+            end
+          end
+        end
+        collect_flat(display_map)
+      else
+        for _, t in ipairs(display_map) do
+          if not only_bookmarks or bookmarks[t] then
+            table.insert(flat_candidates, t)
+          end
+        end
+      end
+
       local flat_filtered = flat_candidates
       sort_filtered(flat_filtered)
       for _, t in ipairs(flat_filtered) do
@@ -518,8 +571,26 @@ local function render_internal(ctx)
         table.insert(lines, string.format("%s%s %s %s", warning, b, s, display))
       end
     else
-      for group, node in pairs(display_map) do
-        render_group(group, node, 0)
+      if not is_display_grouped then
+        local flat_candidates = {}
+        for _, t in ipairs(display_map) do
+          if not only_bookmarks or bookmarks[t] then
+            table.insert(flat_candidates, t)
+          end
+        end
+        local flat_filtered = flat_candidates
+        sort_filtered(flat_filtered)
+        for _, t in ipairs(flat_filtered) do
+          local display = cfg.theme_aliases[t] or t
+          local warning = themes.is_available(t) and "" or C.ICON.WARN
+          local b = bookmarks[t] and C.ICON.BOOKMARK or " "
+          local s = (state.current == t) and C.ICON.CURRENT_ON or C.ICON.CURRENT_OFF
+          table.insert(lines, string.format("%s%s %s %s", warning, b, s, display))
+        end
+      else
+        for group, node in pairs(display_map) do
+          render_group(group, node, 0)
+        end
       end
     end
   end
