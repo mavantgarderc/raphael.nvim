@@ -21,6 +21,70 @@ local render = require("raphael.picker.render")
 
 local HIGHLIGHT_NS = C.NS.PICKER_CURSOR
 
+local help_lines = {
+  "Raphael Picker - Keybindings:",
+  "",
+  "Navigation:",
+  "  `j`/`k`         - Navigate (wraps around)",
+  "  `gg`/`G`        - Jump to top/bottom",
+  "  `<C-u>`/`<C-d>` - Page up/down (half-window)",
+  "  `zt`/`zz`/`zb`  - Scroll current line to top/center/bottom",
+  "  `ga`            - Jump to first theme (All)",
+  "  `<C-l>`/`<C-h>` - Move into/out of group (header <-> items / previous header)",
+  "  `<C-j>`/`<C-k>` - Jump to next/prev group header (wraps)",
+  "  `gn`/`gp`       - Jump to next/prev group header (wraps, tracks last group)",
+  "  `g.`            - Jump to last visited group (via gn/gp/<C-j>/<C-k>)",
+  "  `[g`/`]g`       - Jump to prev/next group header (wraps)",
+  "  `[b`/`]b`       - Jump to prev/next bookmark (skips Bookmarks group block)",
+  "  `[r`/`]r`       - Jump to prev/next history entry (skips Recent group block)",
+  "",
+  "Sections:",
+  "  `gb`            - Jump to Bookmarks section header",
+  "  `gB`            - Jump to first bookmarked theme",
+  "  `gr`            - Jump to Recent section header",
+  "",
+  "Actions:",
+  "  `<CR>`          - Select theme (apply & close picker)",
+  "  `x`/`<S-CR>`    - Apply theme (keep picker open)",
+  "  `<C-A-k>`       - Collapse all groups",
+  "  `<C-A-j>`       - Expand all groups",
+  "  `c`             - Collapse/expand group under cursor",
+  "  `s`             - Cycle sort mode",
+  "  `S`             - Toggle sorting on/off",
+  "  `R`             - Toggle reverse sorting (descending)",
+  "  `F`             - Toggle only-bookmarked view",
+  "  `v`             - Toggle flat/grouped view",
+  "  `gf`            - Toggle configured/other picker",
+  "  `/`             - Search themes",
+  "  `a`             - Clear search / show all themes",
+  "  `b`             - Toggle bookmark for theme under cursor",
+  "  `dd`            - Jump to current theme (expands groups if needed)",
+  "  `XB`            - Clear all bookmarks",
+  "  `XR`            - Clear recent history",
+  "  `<C-p>`         - Refresh picker contents",
+  "",
+  "History (picker-only):",
+  "  `u`             - Undo theme change",
+  "  `<C-r>`         - Redo theme change",
+  "  `H`             - Show full history",
+  "  `J`             - Jump to history position",
+  "  `T`             - Show quick stats",
+  "  `r`             - Apply random theme",
+  "",
+  "Preview:",
+  "  `i`             - Show code sample / next language",
+  "  `I`             - Previous code sample language",
+  "  `C`             - Compare candidate with current theme (toggle)",
+  "",
+  "Quick slots:",
+  "  `m0`..`m9`      - Map current theme to quick slot 0-9",
+  "  `0`..`9`        - Jump to quick slot theme in picker & preview it",
+  "",
+  "Other:",
+  "  `q`/`<Esc>`     - Quit (revert theme)",
+  "  `?`             - Show this help",
+}
+
 --- Highlight the current line using Visual
 ---
 --- Uses C.HL.PICKER_CURSOR (defaults to "Visual") and the PICKER_CURSOR
@@ -824,6 +888,37 @@ function M.attach(ctx, fns)
     jump_to_current_theme(ctx)
   end, { buffer = buf, desc = "Jump to current theme" })
 
+  map("n", "XB", function()
+    vim.ui.input({ prompt = "Clear all bookmarks? (y/N): " }, function(input)
+      if not input or input:lower():sub(1, 1) ~= "y" then
+        return
+      end
+      state.bookmarks = {}
+      ctx.bookmarks = {}
+      if core.save_state then
+        pcall(core.save_state)
+      end
+      fns.render(true)
+      M.highlight_current_line(ctx)
+      vim.notify("raphael: cleared all bookmarks", vim.log.levels.INFO)
+    end)
+  end, { buffer = buf, desc = "Clear all bookmarks" })
+
+  map("n", "XR", function()
+    vim.ui.input({ prompt = "Clear recent history? (y/N): " }, function(input)
+      if not input or input:lower():sub(1, 1) ~= "y" then
+        return
+      end
+      state.history = {}
+      if core.save_state then
+        pcall(core.save_state)
+      end
+      fns.render(true)
+      M.highlight_current_line(ctx)
+      vim.notify("raphael: cleared recent history", vim.log.levels.INFO)
+    end)
+  end, { buffer = buf, desc = "Clear recent history" })
+
   map("n", "]b", function()
     if not next(ctx.bookmarks) then
       return
@@ -1201,52 +1296,6 @@ function M.attach(ctx, fns)
       jump_to_quick_slot(slot)
     end, { buffer = buf, desc = "Jump to quick slot " .. slot })
   end
-
-  local help_lines = {
-    "Raphael Picker - Keybindings:",
-    "",
-    "Navigation:",
-    "  `j`/`k`         - Navigate (wraps around)",
-    "  `<C-l>`/`<C-h>` - Jump to inner/outer group header (wraps)",
-    "  `<C-j>`/`<C-k>` - Jump to next/prev group header (wraps)",
-    "  `[g`/`]g`       - Jump to prev/next group header (wraps)",
-    "  `[b`/`]b`       - Jump to prev/next bookmark",
-    "  `[r`/`]r`       - Jump to prev/next history state",
-    "",
-    "Actions:",
-    "  `<CR>`        - Select theme",
-    "  `<C-A-k>`     - Expand all groups",
-    "  `<C-A-j>`     - Collapse all groups",
-    "  `c`           - Collapse/expand group",
-    "  `s`           - Cycle sort mode",
-    "  `S`           - Toggle sorting on/off",
-    "  `R`           - Toggle reverse sorting (descending)",
-    "  `/`           - Search themes",
-    "  `a`           - Clear Search",
-    "  `b`           - Toggle bookmark",
-    "  `dd`          - Jump to current theme",
-    "",
-    "History (picker-only):",
-    "  `u`           - Undo theme change",
-    "  `<C-r>`       - Redo theme change",
-    "  `H`           - Show full history",
-    "  `J`           - Jump to history position",
-    "  `T`           - Show quick stats",
-    "  `r`           - Apply random theme",
-    "",
-    "Preview:",
-    "  `i`           - Show Code Sample, Iterate languages forward",
-    "  `I`           - Iterate languages backward",
-    "  `C`           - Compare candidate with current theme (toggle)",
-    "",
-    "Quick slots:",
-    "  `m0`..`m9`    - Map current theme to quick slot 0-9",
-    "  `0`..`9`      - Jump to quick slot theme in picker & preview it",
-    "",
-    "Other:",
-    "  `q`/`<Esc>`   - Quit (revert theme)",
-    "  `?`           - Show this help",
-  }
 
   map("n", "?", function()
     vim.notify(table.concat(help_lines, "\n"), vim.log.levels.INFO)
