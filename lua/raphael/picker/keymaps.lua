@@ -761,6 +761,43 @@ function M.attach(ctx, fns)
     fns.render()
   end, { buffer = buf, desc = "Toggle reverse sorting" })
 
+  map("n", "F", function()
+    ctx.flags.only_bookmarks = not ctx.flags.only_bookmarks
+    local msg = ctx.flags.only_bookmarks and "Only bookmarked: ON" or "Only bookmarked: OFF"
+    vim.notify("raphael: " .. msg, vim.log.levels.INFO)
+    fns.render()
+    M.highlight_current_line(ctx)
+  end, { buffer = buf, desc = "Toggle only-bookmarked view" })
+
+  map("n", "v", function()
+    ctx.flags.flat_view = not ctx.flags.flat_view
+    local msg = ctx.flags.flat_view and "Flat view: ON" or "Flat view: OFF"
+    vim.notify("raphael: " .. msg, vim.log.levels.INFO)
+    fns.render()
+    M.highlight_current_line(ctx)
+  end, { buffer = buf, desc = "Toggle flat/grouped view" })
+
+  map("n", "gf", function()
+    local open_fn = core.open_picker or core.open
+    if type(open_fn) ~= "function" then
+      vim.notify("raphael: core.open_picker/open not available", vim.log.levels.WARN)
+      return
+    end
+    local target_opts
+    if ctx.picker_type == "configured" then
+      target_opts = { exclude_configured = true }
+    else
+      target_opts = {}
+    end
+    preview.close_code_preview()
+    ctx.instances[ctx.picker_type] = false
+    fns.close_picker(false)
+    local ok, err = pcall(open_fn, target_opts)
+    if not ok then
+      vim.notify("raphael: failed to toggle picker (gf): " .. tostring(err), vim.log.levels.ERROR)
+    end
+  end, { buffer = buf, desc = "Toggle configured/other picker" })
+
   map("n", "/", function()
     fns.open_search()
   end, { buffer = buf, desc = "Search themes" })
