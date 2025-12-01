@@ -1336,6 +1336,16 @@ function M.attach(ctx, fns)
   map("n", "<C-A-j>", function()
     set_all_groups_collapsed(false)
   end, { buffer = buf, desc = "Expand all groups" })
+
+  map("n", "<C-i>", function() end, { buffer = buf, desc = "Disabled: jump forward" })
+  map("n", "<C-o>", function() end, { buffer = buf, desc = "Disabled: jump backward" })
+  map("n", "<C-w>", function() end, { buffer = buf, desc = "Disabled: window prefix" })
+  map("n", "<C-w>h", function() end, { buffer = buf, desc = "Disabled: window left" })
+  map("n", "<C-w>j", function() end, { buffer = buf, desc = "Disabled: window down" })
+  map("n", "<C-w>k", function() end, { buffer = buf, desc = "Disabled: window up" })
+  map("n", "<C-w>l", function() end, { buffer = buf, desc = "Disabled: window right" })
+  map("n", "<C-w>c", function() end, { buffer = buf, desc = "Disabled: close window" })
+  map("n", "<C-w>o", function() end, { buffer = buf, desc = "Disabled: only window" })
 end
 
 return M
