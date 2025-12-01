@@ -214,21 +214,22 @@ end
 --- Jump to the currently applied theme (state.current) inside the picker.
 ---
 ---@param ctx table
+---@return boolean found
 local function jump_to_current_theme(ctx)
   local win = ctx.win
   local buf = ctx.buf
   local state = ctx.state
 
   if not win or not vim.api.nvim_win_is_valid(win) then
-    return
+    return false
   end
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
-    return
+    return false
   end
 
   local current = state.current
   if not current or current == "" then
-    return
+    return false
   end
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -238,9 +239,10 @@ local function jump_to_current_theme(ctx)
       vim.api.nvim_win_set_cursor(win, { i, 0 })
       vim.cmd("normal! zz")
       M.highlight_current_line(ctx)
-      return
+      return true
     end
   end
+  return false
 end
 
 --- Attach all picker-local keymaps to ctx.buf.
@@ -270,6 +272,60 @@ function M.attach(ctx, fns)
 
   local base_title = ctx.base_title
   local opts = ctx.opts
+
+  --- Expand all groups that contain the given theme in themes.theme_map.
+  ---
+  --- @param theme string
+  local function expand_groups_for_theme(theme)
+    if not themes or not themes.theme_map then
+      return
+    end
+    local found_path = nil
+    local function dfs(node, path)
+      if found_path then
+        return
+      end
+      local t = type(node)
+      if t == "string" then
+        if node == theme then
+          found_path = vim.deepcopy(path)
+        end
+      elseif t == "table" then
+        if vim.islist(node) then
+          for _, v in ipairs(node) do
+            dfs(v, path)
+            if found_path then
+              return
+            end
+          end
+        else
+          for k, v in pairs(node) do
+            if type(k) == "string" then
+              table.insert(path, k)
+              dfs(v, path)
+              if found_path then
+                return
+              end
+              path[#path] = nil
+            else
+              dfs(v, path)
+              if found_path then
+                return
+              end
+            end
+          end
+        end
+      end
+    end
+    dfs(themes.theme_map, {})
+    if not found_path or #found_path == 0 then
+      return
+    end
+    for _, g in ipairs(found_path) do
+      ctx.collapsed[g] = false
+    end
+    fns.update_state_collapsed()
+  end
 
   local function set_all_groups_collapsed(collapsed)
     if not buf or not vim.api.nvim_buf_is_valid(buf) then
@@ -385,19 +441,9 @@ function M.attach(ctx, fns)
     core.set_quick_slot(slot, theme)
   end
 
-  map("n", "q", function()
-    preview.close_code_preview()
-    ctx.instances[ctx.picker_type] = false
-    fns.close_picker(true)
-  end, { buffer = buf, desc = "Quit and revert" })
-
-  map("n", "<Esc>", function()
-    preview.close_code_preview()
-    ctx.instances[ctx.picker_type] = false
-    fns.close_picker(true)
-  end, { buffer = buf, desc = "Quit and revert" })
-
-  map("n", "<CR>", function()
+  --- Apply theme under cursor; optionally keep picker open.
+  ---@param keep_open boolean
+  local function apply_theme_at_cursor(keep_open)
     local hdr = parse_current_header()
     if hdr then
       vim.notify("Cannot select a group header", vim.log.levels.WARN)
@@ -412,17 +458,44 @@ function M.attach(ctx, fns)
       vim.notify("Theme not installed: " .. theme, vim.log.levels.ERROR)
       return
     end
-
     local ok, err = pcall(core.apply, theme, true)
     if not ok then
       vim.notify("Failed to apply theme: " .. theme .. " (" .. tostring(err) .. ")", vim.log.levels.ERROR)
       return
     end
+    if keep_open then
+      fns.render()
+      M.highlight_current_line(ctx)
+    else
+      preview.close_code_preview()
+      ctx.instances[ctx.picker_type] = false
+      fns.close_picker(false)
+    end
+  end
 
+  map("n", "q", function()
     preview.close_code_preview()
     ctx.instances[ctx.picker_type] = false
-    fns.close_picker(false)
+    fns.close_picker(true)
+  end, { buffer = buf, desc = "Quit and revert" })
+
+  map("n", "<Esc>", function()
+    preview.close_code_preview()
+    ctx.instances[ctx.picker_type] = false
+    fns.close_picker(true)
+  end, { buffer = buf, desc = "Quit and revert" })
+
+  map("n", "<CR>", function()
+    apply_theme_at_cursor(false)
   end, { buffer = buf, desc = "Select theme" })
+
+  map("n", "<S-CR>", function()
+    apply_theme_at_cursor(true)
+  end, { buffer = buf, desc = "Apply theme (keep picker open)" })
+
+  map("n", "x", function()
+    apply_theme_at_cursor(true)
+  end, { buffer = buf, desc = "Apply theme (keep picker open)" })
 
   map("n", "j", function()
     local line_count = #vim.api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -623,12 +696,20 @@ function M.attach(ctx, fns)
     if theme then
       core.toggle_bookmark(theme)
       refresh_bookmarks_set()
-      -- immediate render so cursor restore uses current theme/group
       fns.render(true)
     end
   end, { buffer = buf, desc = "Toggle bookmark" })
 
   map("n", "dd", function()
+    if jump_to_current_theme(ctx) then
+      return
+    end
+    local current = state.current
+    if not current or current == "" then
+      return
+    end
+    expand_groups_for_theme(current)
+    render.render(ctx, true)
     jump_to_current_theme(ctx)
   end, { buffer = buf, desc = "Jump to current theme" })
 
@@ -1088,11 +1169,11 @@ function M.attach(ctx, fns)
     end, { buffer = buf, silent = true, noremap = true, desc = "Compare with current theme" })
   end
 
-  map("n", "<C-A-j>", function()
+  map("n", "<C-A-k>", function()
     set_all_groups_collapsed(true)
   end, { buffer = buf, desc = "Collapse all groups" })
 
-  map("n", "<C-A-k>", function()
+  map("n", "<C-A-j>", function()
     set_all_groups_collapsed(false)
   end, { buffer = buf, desc = "Expand all groups" })
 end
