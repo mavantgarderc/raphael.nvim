@@ -93,7 +93,7 @@ local function debounce(ms, fn)
   local timer = nil
   return function(ctx)
     if timer then
-      local ok = pcall(function()
+      local ok = pcall(function() -- luacheck: ignore
         if timer and not timer:is_closing() then
           timer:stop()
           vim.schedule(function()
@@ -103,8 +103,6 @@ local function debounce(ms, fn)
           end)
         end
       end)
-      if not ok then
-      end
       timer = nil
     end
     timer = vim.defer_fn(function()
@@ -149,7 +147,7 @@ local function render_internal(ctx)
   end
 
   local current_group
-  local current_line = 1
+  local current_line = 1 -- luacheck: ignore
   local current_theme
 
   if picker_win and vim.api.nvim_win_is_valid(picker_win) then

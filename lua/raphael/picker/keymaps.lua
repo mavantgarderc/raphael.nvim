@@ -335,7 +335,7 @@ function M.attach(ctx, fns)
   local state = ctx.state
 
   local base_title = ctx.base_title
-  local opts = ctx.opts
+  -- local opts = ctx.opts
 
   --- Expand all groups that contain the given theme in themes.theme_map.
   ---

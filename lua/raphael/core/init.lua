@@ -34,18 +34,18 @@ M.config = {}
 --- In-memory state mirror of what is persisted via cache.
 --- This is NOT the only source of truth; cache is canonical.
 ---@class RaphaelState
----@field current?         string                                 -- currently active theme
----@field saved?           string                                 -- last manually saved theme
----@field previous?        string                                 -- theme before current (for quick revert)
----@field auto_apply       boolean                                -- whether BufEnter/FileType auto-apply is enabled
----@field bookmarks        table<string, string[]>                -- scope -> list of bookmarked themes
----@field history          string[]                               -- recent themes (newest first)
----@field usage            table<string, integer>                 -- usage count per theme
----@field collapsed        table<string, boolean>                 -- group collapse state
----@field sort_mode        string                                 -- current sort mode ("alpha", "recent", "usage", or custom)
----@field undo_history     table                                  -- detailed undo stack (managed by extras.history/cache)
+---@field current?         string                      -- currently active theme
+---@field saved?           string                      -- last manually saved theme
+---@field previous?        string                      -- theme before current (for quick revert)
+---@field auto_apply       boolean                     -- whether BufEnter/FileType auto-apply is enabled
+---@field bookmarks        table<string, string[]>     -- scope -> list of bookmarked themes
+---@field history          string[]                    -- recent themes (newest first)
+---@field usage            table<string, integer>      -- usage count per theme
+---@field collapsed        table<string, boolean>      -- group collapse state
+---@field sort_mode        string                      -- current sort mode ("alpha", "recent", "usage", or custom)
+---@field undo_history     table                       -- detailed undo stack (managed by extras.history/cache)
 ---@field quick_slots      table<string, table<string, string>>   -- scope -> slot("0"-"9")->theme_name
----@field current_profile? string                                 -- active profile name (if any)
+---@field current_profile? string                      -- active profile name (if any)
 M.state = {
   current = nil,
   saved = nil,
@@ -248,7 +248,7 @@ function M.save_state()
 end
 
 function M.toggle_auto()
-  M.state.auto_apply = not (M.state.auto_apply == true)
+  M.state.auto_apply = not (M.state.auto_apply == true) -- luacheck: ignore
 
   cache.set_auto_apply(M.state.auto_apply)
   vim.api.nvim_set_var("raphael_auto_theme", M.state.auto_apply)
