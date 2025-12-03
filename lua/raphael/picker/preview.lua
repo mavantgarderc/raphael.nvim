@@ -293,9 +293,7 @@ local function get_active_theme_label(ctx)
     end
   end
 
-  return active_preview_theme
-    or (ctx.core.state and ctx.core.state.current)
-    or "?"
+  return active_preview_theme or (ctx.core.state and ctx.core.state.current) or "?"
 end
 
 --- Update code preview buffer based on current_lang and preview/compare state.
@@ -447,9 +445,7 @@ function M.toggle_compare(ctx, candidate_theme)
     return
   end
 
-  local base = (ctx.core.state and ctx.core.state.current)
-    or vim.g.colors_name
-    or ctx.core.config.default_theme
+  local base = (ctx.core.state and ctx.core.state.current) or vim.g.colors_name or ctx.core.config.default_theme
 
   if not base or not themes.is_available(base) then
     vim.notify("raphael: no valid current theme to compare against", vim.log.levels.WARN)

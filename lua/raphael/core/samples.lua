@@ -300,7 +300,7 @@ class ApiClient {
     // TODO: Add request timeout
     const response = await fetch(`${this.baseUrl}/users/${id}`);
     const data = await response.json();
-    
+
     const user = UserSchema.parse(data);
     this.cache.set(`user_${id}`, user);
 

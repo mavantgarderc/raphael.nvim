@@ -102,7 +102,7 @@ M.defaults = {
 
   icons = vim.deepcopy(constants.ICON),
 
-  on_apply = function(theme)
+  on_apply = function(_theme)
     vim.schedule(function()
       local ok, lualine = pcall(require, "lualine")
       if ok then
