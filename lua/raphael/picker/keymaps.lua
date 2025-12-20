@@ -142,8 +142,9 @@ function M.go_in_group(ctx)
     return
   end
 
+  -- Use render.parse_line_header so indentation / aliases are handled correctly
   local function is_header(line)
-    return line:match("^" .. C.ICON.GROUP_EXPANDED) or line:match("^" .. C.ICON.GROUP_COLLAPSED)
+    return render.parse_line_header(line or "") ~= nil
   end
 
   local target
@@ -207,8 +208,9 @@ function M.go_out_group(ctx)
     return
   end
 
+  -- Use render.parse_line_header so indentation / aliases are handled correctly
   local function is_header(line)
-    return line:match("^" .. C.ICON.GROUP_EXPANDED) or line:match("^" .. C.ICON.GROUP_COLLAPSED)
+    return render.parse_line_header(line or "") ~= nil
   end
 
   local line = lines[cur] or ""
@@ -1277,7 +1279,26 @@ function M.attach(ctx, fns)
     end
   end, { buffer = buf, desc = "Clear search / show all themes" })
 
+  -- NEW BEHAVIOR: expand collapsed group on header, then go into it
   map("n", "<C-l>", function()
+    local cur = vim.api.nvim_win_get_cursor(win)[1]
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local line = lines[cur] or ""
+
+    local hdr = render.parse_line_header(line)
+    if hdr then
+      local key = hdr
+      if key == "Bookmarks" then
+        key = "__bookmarks"
+      elseif key == "Recent" then
+        key = "__recent"
+      end
+
+      if ctx.collapsed[key] then
+        toggle_group(key)
+      end
+    end
+
     M.go_in_group(ctx)
   end, { buffer = buf, desc = "Go in group" })
 
