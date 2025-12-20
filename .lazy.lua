@@ -204,7 +204,7 @@ return {
       BOOKMARKS_HEADER = "Bookmarks",
     },
 
-    on_apply = function(theme)
+    on_apply = function()
       vim.schedule(function()
         local ok, lualine = pcall(require, "lualine")
         if not ok then
