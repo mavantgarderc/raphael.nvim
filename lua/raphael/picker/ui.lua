@@ -8,11 +8,7 @@ local M = {}
 
 local themes = require("raphael.themes")
 local autocmds = require("raphael.core.autocmds")
-local render = require("raphael.picker.render")
-local search = require("raphael.picker.search")
-local preview = require("raphael.picker.preview")
-local keymaps = require("raphael.picker.keymaps")
-local bookmarks_mod = require("raphael.picker.bookmarks")
+local lazy_loader = require("raphael.picker.lazy_loader")
 
 -- Picker instances (to avoid multiple windows per type)
 -- Used to prevent opening multiple pickers of the same "type".
@@ -102,7 +98,9 @@ end
 ---   - ctx.state.saved
 local function save_previous_theme()
   local state = ctx.state
+  ---@diagnostic disable-next-line: need-check-nil, inject-field, undefined-field
   state.previous = state.current or vim.g.colors_name or state.saved
+  ---@diagnostic disable-next-line: need-check-nil
   log("DEBUG", "Previous theme saved", state.previous)
 end
 
@@ -128,14 +126,22 @@ end
 local function close_picker(revert)
   log("DEBUG", "Closing picker", { revert = revert })
 
+  ---@diagnostic disable-next-line: undefined-field
   if revert and ctx.state and ctx.state.previous and themes.is_available(ctx.state.previous) then
-    local ok, err = pcall(preview.load_theme, ctx.state.previous, true)
-    if not ok then
-      log("ERROR", "Failed to revert theme", err)
+    local preview = lazy_loader.get_preview()
+    if preview then
+      ---@diagnostic disable-next-line: undefined-field
+      local ok, err = pcall(preview.load_theme, ctx.state.previous, true)
+      if not ok then
+        log("ERROR", "Failed to revert theme", err)
+      end
     end
   end
 
-  preview.close_all()
+  local preview = lazy_loader.get_preview()
+  if preview then
+    preview.close_all()
+  end
   close_picker_windows()
 
   ctx.search_query = ""
@@ -156,6 +162,7 @@ end
 
 --- Persist ctx.collapsed into core.state.collapsed and call core.save_state() if present.
 local function update_state_collapsed()
+  ---@diagnostic disable-next-line: inject-field
   ctx.state.collapsed = vim.deepcopy(ctx.collapsed)
   if ctx.core and ctx.core.save_state then
     pcall(ctx.core.save_state)
@@ -164,7 +171,10 @@ end
 
 --- Render the picker using the current ctx.
 local function render_picker()
-  render.render(ctx)
+  local render = lazy_loader.get_render()
+  if render then
+    render.render(ctx)
+  end
 end
 
 --- Setup autocmds specifically for the picker buffer.
@@ -175,35 +185,57 @@ end
 local function setup_autocmds_for_picker()
   autocmds.picker_cursor_autocmd(ctx.buf, {
     parse = function(line)
-      return render.parse_line_theme(ctx.core, line)
+      local render = lazy_loader.get_render()
+      if render then
+        return render.parse_line_theme(ctx.core, line)
+      end
+      return nil
     end,
     preview = function(theme)
-      preview.preview_theme(ctx, theme)
+      local preview = lazy_loader.get_preview()
+      if preview then
+        preview.preview_theme(ctx, theme)
+      end
     end,
     highlight = function()
-      keymaps.highlight_current_line(ctx)
+      local keymaps_mod = lazy_loader.get_keymaps()
+      if keymaps_mod then
+        keymaps_mod.highlight_current_line(ctx)
+      end
     end,
     update_preview = function()
-      preview.update_code_preview(ctx)
+      local preview = lazy_loader.get_preview()
+      if preview then
+        preview.update_code_preview(ctx)
+      end
     end,
   })
 
   autocmds.picker_bufdelete_autocmd(ctx.buf, {
     log = log,
     cleanup = function()
-      preview.close_all()
+      local preview = lazy_loader.get_preview()
+      if preview then
+        preview.close_all()
+      end
     end,
   })
 end
 
 --- Open the search prompt window attached to the picker.
 local function setup_search()
-  search.open(ctx, {
-    render = render_picker,
-    highlight = function()
-      keymaps.highlight_current_line(ctx)
-    end,
-  })
+  local search = lazy_loader.get_search()
+  if search then
+    search.open(ctx, {
+      render = render_picker,
+      highlight = function()
+        local keymaps = lazy_loader.get_keymaps()
+        if keymaps then
+          keymaps.highlight_current_line(ctx)
+        end
+      end,
+    })
+  end
 end
 
 --- Build the picker window title based on picker type and sort flags.
@@ -213,6 +245,7 @@ local function build_title()
   local state = ctx.state
   local core = ctx.core
 
+  ---@diagnostic disable-next-line: need-check-nil, undefined-field
   local sort = ctx.flags.disable_sorting and "off" or (state.sort_mode or core.config.sort_mode or "alpha")
   local suffix = sort .. (ctx.flags.reverse_sorting and " reverse " or "")
   ctx.base_title = ctx.opts.exclude_configured and "Raphael - Other Themes" or "Raphael - Configured Themes"
@@ -269,7 +302,12 @@ local function init_context(core, opts)
   ctx.collapsed["__bookmarks"] = ctx.collapsed["__bookmarks"] or false
   ctx.collapsed["__recent"] = ctx.collapsed["__recent"] or false
 
-  ctx.bookmarks = bookmarks_mod.build_set(ctx.state, core)
+  local bookmarks_mod = lazy_loader.get_bookmarks()
+  if bookmarks_mod then
+    ctx.bookmarks = bookmarks_mod.build_set(ctx.state, core)
+  else
+    ctx.bookmarks = {}
+  end
 
   ctx.header_lines = {}
   ctx.last_cursor = {}
@@ -291,7 +329,11 @@ end
 ---
 ---@return table
 function M.get_cache_stats()
-  return preview.get_cache_stats()
+  local preview = lazy_loader.get_preview()
+  if preview then
+    return preview.get_cache_stats()
+  end
+  return { palette_cache_size = 0, active_timers = 0 }
 end
 
 --- Get the theme under cursor in the picker, or nil if not available.
@@ -302,14 +344,21 @@ function M.get_current_theme()
     return nil
   end
   local line = vim.api.nvim_get_current_line()
-  return render.parse_line_theme(ctx.core, line)
+  local render = lazy_loader.get_render()
+  if render then
+    return render.parse_line_theme(ctx.core, line)
+  end
+  return nil
 end
 
 --- Update palette preview for a given theme.
 ---
 ---@param theme string
 function M.update_palette(theme)
-  preview.update_palette(ctx, theme)
+  local preview = lazy_loader.get_preview()
+  if preview then
+    preview.update_palette(ctx, theme)
+  end
 end
 
 --- Open the picker UI.
@@ -335,18 +384,29 @@ function M.open(core, opts)
   save_previous_theme()
 
   render_picker()
-  keymaps.highlight_current_line(ctx)
-
-  if ctx.state.current then
-    preview.update_palette(ctx, ctx.state.current)
+  local keymaps_mod = lazy_loader.get_keymaps()
+  if keymaps_mod then
+    keymaps_mod.highlight_current_line(ctx)
   end
 
-  keymaps.attach(ctx, {
-    close_picker = close_picker,
-    render = render_picker,
-    update_state_collapsed = update_state_collapsed,
-    open_search = setup_search,
-  })
+  ---@diagnostic disable-next-line: undefined-field
+  if ctx.state.current then
+    local preview = lazy_loader.get_preview()
+    if preview then
+      ---@diagnostic disable-next-line: undefined-field
+      preview.update_palette(ctx, ctx.state.current)
+    end
+  end
+
+  local keymaps = lazy_loader.get_keymaps()
+  if keymaps then
+    keymaps.attach(ctx, {
+      close_picker = close_picker,
+      render = render_picker,
+      update_state_collapsed = update_state_collapsed,
+      open_search = setup_search,
+    })
+  end
 
   setup_autocmds_for_picker()
 
