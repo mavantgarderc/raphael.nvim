@@ -263,12 +263,25 @@ function M.picker_cursor_autocmd(picker_buf, cbs)
         return
       end
 
-      local theme
-      if type(parse) == "function" then
-        theme = parse(line)
+      local is_header = false
+      local render_ok, render_module = pcall(require, "raphael.picker.render")
+      if render_ok and render_module then
+        if type(render_module.parse_line_header) == "function" then
+          local header = render_module.parse_line_header(line)
+          if header then
+            is_header = true
+          end
+        end
       end
-      if theme then
-        debounced_preview(theme)
+
+      if not is_header then
+        local theme
+        if type(parse) == "function" then
+          theme = parse(line)
+        end
+        if theme then
+          debounced_preview(theme)
+        end
       end
       if type(highlight) == "function" then
         highlight()

@@ -410,6 +410,30 @@ function M.open(core, opts)
 
   setup_autocmds_for_picker()
 
+  ---@diagnostic disable-next-line: undefined-field
+  if ctx.state.current then
+    local preview = lazy_loader.get_preview()
+    if preview then
+      -- Immediate update
+      ---@diagnostic disable-next-line: undefined-field
+      preview.update_palette(ctx, ctx.state.current)
+
+      vim.defer_fn(function()
+        if ctx.buf and vim.api.nvim_buf_is_valid(ctx.buf) then
+          ---@diagnostic disable-next-line: undefined-field
+          preview.update_palette(ctx, ctx.state.current)
+        end
+      end, 100)
+
+      vim.defer_fn(function()
+        if ctx.buf and vim.api.nvim_buf_is_valid(ctx.buf) then
+          ---@diagnostic disable-next-line: undefined-field
+          preview.update_palette(ctx, ctx.state.current)
+        end
+      end, 200)
+    end
+  end
+
   log("DEBUG", "Picker opened successfully")
 end
 
