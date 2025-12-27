@@ -18,6 +18,7 @@ local M = {}
 
 local themes = require("raphael.themes")
 local samples = require("raphael.core.samples")
+local palette_cache = require("raphael.core.palette_cache")
 local C = require("raphael.constants")
 
 -- Palette preview (top mini bar)
@@ -54,14 +55,6 @@ local function reset_compare_state()
   active_preview_theme = nil
 end
 
-local function get_hl_rgb(name)
-  local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
-  if ok and hl then
-    return hl
-  end
-  return nil
-end
-
 local function ensure_palette_hl(idx, color_int)
   if not color_int then
     return nil
@@ -90,6 +83,8 @@ end
 ---
 --- Draws a single-line window above the picker, consisting of BLOCK icons
 --- colored by various highlight groups (Normal, Comment, String, etc.)
+---
+--- Uses the enhanced caching system for improved performance.
 ---
 ---@param ctx table  # picker context
 ---@param theme string
@@ -127,20 +122,17 @@ function M.update_palette(ctx, theme)
   local ns = C.NS.PALETTE
   pcall(vim.api.nvim_buf_clear_namespace, palette_buf, ns, 0, -1)
 
-  if not palette_hl_cache[theme] or type(palette_hl_cache[theme]) ~= "table" then
-    palette_hl_cache[theme] = {}
-    for _, hl_name in ipairs(PALETTE_HL) do
-      local hl = get_hl_rgb(hl_name)
-      if hl then
-        palette_hl_cache[theme][hl_name] = hl.fg or hl.bg
-      end
-    end
+  local palette_data = palette_cache.get_palette_with_cache(theme)
+  if not palette_data then
+    pcall(vim.api.nvim_buf_clear_namespace, palette_buf, ns, 0, -1)
+    vim.cmd("redraw!")
+    return
   end
 
   for i, hl_name in ipairs(PALETTE_HL) do
-    local color_int = palette_hl_cache[theme][hl_name]
-    if color_int then
-      local gname = ensure_palette_hl(i, color_int)
+    local hl_info = palette_data[hl_name]
+    if hl_info and hl_info.fg then
+      local gname = ensure_palette_hl(i, hl_info.fg)
       if gname then
         local search_pos, occurrence = 1, 0
         while true do
@@ -240,7 +232,6 @@ function M.preview_theme(ctx, theme)
     return
   end
 
-  -- In compare mode, moving cursor updates the candidate theme.
   if compare_mode then
     compare_candidate_theme = theme
     compare_active_side = "candidate"
@@ -296,6 +287,10 @@ local function get_active_theme_label(ctx)
   return active_preview_theme or (ctx.core.state and ctx.core.state.current) or "?"
 end
 
+-- Debounce utility for preview updates
+local debounce_utils = require("raphael.utils.debounce")
+local debounced_code_preview = nil
+
 --- Update code preview buffer based on current_lang and preview/compare state.
 ---@param ctx table
 function M.update_code_preview(ctx)
@@ -303,42 +298,48 @@ function M.update_code_preview(ctx)
     return
   end
 
-  ensure_code_buf()
+  if not debounced_code_preview then
+    debounced_code_preview = debounce_utils.debounce(function(ctx_copy)
+      ensure_code_buf()
 
-  local lang_info = samples.get_language_info(current_lang or "lua")
-  local sample_code = samples.get_sample(current_lang or "lua")
+      local lang_info = samples.get_language_info(current_lang or "lua")
+      local sample_code = samples.get_sample(current_lang or "lua")
 
-  if not sample_code then
-    vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, {
-      "Sample unavailable - fallback to basic text.",
-    })
-    return
+      if not sample_code then
+        vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, {
+          "Sample unavailable - fallback to basic text.",
+        })
+        return
+      end
+
+      local theme_label = get_active_theme_label(ctx_copy)
+      local header
+      if compare_mode then
+        header = string.format(
+          "[%s] - compare base=%s | cand=%s | showing=%s",
+          lang_info.display,
+          compare_base_theme or "?",
+          compare_candidate_theme or "?",
+          theme_label or "?"
+        )
+      else
+        header = string.format("[%s] - [%s]", lang_info.display, theme_label or "?")
+      end
+
+      local lines = vim.split(sample_code, "\n")
+      local all = { header, "" }
+      for _, l in ipairs(lines) do
+        table.insert(all, l)
+      end
+
+      vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, all)
+      vim.api.nvim_set_option_value("filetype", lang_info.ft, { buf = code_buf })
+
+      vim.cmd(string.format("silent! syntax on | syntax enable | setlocal syntax=%s", lang_info.ft))
+    end, 75)
   end
 
-  local theme_label = get_active_theme_label(ctx)
-  local header
-  if compare_mode then
-    header = string.format(
-      "[%s] - compare base=%s | cand=%s | showing=%s",
-      lang_info.display,
-      compare_base_theme or "?",
-      compare_candidate_theme or "?",
-      theme_label or "?"
-    )
-  else
-    header = string.format("[%s] - [%s]", lang_info.display, theme_label or "?")
-  end
-
-  local lines = vim.split(sample_code, "\n")
-  local all = { header, "" }
-  for _, l in ipairs(lines) do
-    table.insert(all, l)
-  end
-
-  vim.api.nvim_buf_set_lines(code_buf, 0, -1, false, all)
-  vim.api.nvim_set_option_value("filetype", lang_info.ft, { buf = code_buf })
-
-  vim.cmd(string.format("silent! syntax on | syntax enable | setlocal syntax=%s", lang_info.ft))
+  debounced_code_preview(ctx)
 end
 
 local function open_code_window(ctx)
@@ -452,7 +453,6 @@ function M.toggle_compare(ctx, candidate_theme)
     return
   end
 
-  -- Ensure preview window is visible and language selected.
   if not is_preview_visible then
     local allowed_langs = get_allowed_langs(ctx.core)
     current_lang = current_lang or allowed_langs[1] or "lua"
@@ -508,6 +508,7 @@ function M.toggle_compare(ctx, candidate_theme)
   end
 
   palette_hl_cache = {}
+  ---@diagnostic disable-next-line: param-type-mismatch
   M.update_palette(ctx, active_preview_theme)
   M.update_code_preview(ctx)
 end
@@ -534,17 +535,22 @@ end
 ---   {
 ---     palette_cache_size = integer,
 ---     active_timers      = integer, -- currently always 0
+---     enhanced_cache_stats = table, -- stats from the new caching system
 ---   }
 function M.get_cache_stats()
-  local palette_size = 0
+  local legacy_palette_size = 0
   for k, _ in pairs(palette_hl_cache) do
     if type(k) == "string" then
-      palette_size = palette_size + 1
+      legacy_palette_size = legacy_palette_size + 1
     end
   end
+
+  local enhanced_stats = palette_cache.get_stats()
+
   return {
-    palette_cache_size = palette_size,
+    palette_cache_size = legacy_palette_size,
     active_timers = 0,
+    enhanced_cache_stats = enhanced_stats,
   }
 end
 

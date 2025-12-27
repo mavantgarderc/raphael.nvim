@@ -315,6 +315,7 @@ function M.toggle_bookmark(theme, scope)
     state.bookmarks[scope] = list
 
     M.write(state)
+    ---@diagnostic disable-next-line: redundant-return-value
     return false, state.bookmarks
   else
     if #list >= constants.MAX_BOOKMARKS then
@@ -322,11 +323,13 @@ function M.toggle_bookmark(theme, scope)
         string.format("raphael.nvim: Max bookmarks (%d) reached in scope '%s'!", constants.MAX_BOOKMARKS, scope),
         vim.log.levels.WARN
       )
+      ---@diagnostic disable-next-line: redundant-return-value
       return false, nil
     end
     table.insert(list, theme)
     state.bookmarks[scope] = list
     M.write(state)
+    ---@diagnostic disable-next-line: redundant-return-value
     return true, state.bookmarks
   end
 end
@@ -407,6 +410,14 @@ end
 function M.get_all_usage()
   local state = M.read()
   return state.usage or {}
+end
+
+--- Clear expired entries from the palette cache
+function M.clear_expired_palette_cache()
+  local ok, palette_cache = pcall(require, "raphael.core.palette_cache")
+  if ok and palette_cache and palette_cache.clear_expired then
+    palette_cache.clear_expired()
+  end
 end
 
 --- Get or set collapsed state for a group key in persistent state.
@@ -511,6 +522,7 @@ end
 --- @param theme string
 --- @param scope string|nil
 function M.set_quick_slot(slot, theme, scope)
+  ---@diagnostic disable-next-line: cast-local-type
   slot = normalize_slot(slot)
   scope = scope or "__global"
   if not slot then
@@ -537,6 +549,7 @@ end
 --- @param slot string|number
 --- @param scope string|nil
 function M.clear_quick_slot(slot, scope)
+  ---@diagnostic disable-next-line: cast-local-type
   slot = normalize_slot(slot)
   scope = scope or "__global"
   if not slot then
@@ -557,6 +570,7 @@ end
 --- @param scope string|nil
 --- @return string|nil
 function M.get_quick_slot(slot, scope)
+  ---@diagnostic disable-next-line: cast-local-type
   slot = normalize_slot(slot)
   scope = scope or "__global"
   if not slot then

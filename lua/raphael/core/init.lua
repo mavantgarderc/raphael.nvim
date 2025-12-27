@@ -19,6 +19,14 @@ local history = require("raphael.extras.history")
 local themes = require("raphael.themes")
 local picker = require("raphael.picker.ui")
 
+local palette_cache = nil
+local function get_palette_cache()
+  if not palette_cache then
+    palette_cache = require("raphael.core.palette_cache")
+  end
+  return palette_cache
+end
+
 local M = {}
 
 --- Base configuration as provided by the user (after validation).
@@ -137,7 +145,6 @@ local function make_effective_config(base, profile_name)
   end
 
   local effective = vim.tbl_deep_extend("force", base_copy, prof_cfg)
-  -- Ensure profiles table itself isn't overridden by profile contents.
   effective.profiles = profiles
   effective.current_profile = profile_name
   return effective
@@ -180,7 +187,6 @@ function M.setup(config)
   M.config = make_effective_config(M.base_config, requested_profile)
   M.state.current_profile = requested_profile
 
-  -- Refresh scoped state snapshots from disk
   M.state.bookmarks = cache.get_bookmarks_table()
   M.state.quick_slots = cache.get_quick_slots_table()
 
@@ -387,7 +393,33 @@ end
 
 ---@param opts table|nil
 function M.open_picker(opts)
-  return picker.open(M, opts or {})
+  opts = opts or {}
+
+  local preload_themes = vim.schedule_wrap(function()
+    local themes_to_preload = {}
+    if opts.exclude_configured then
+      local all_installed = vim.tbl_keys(themes.installed)
+      local all_configured = themes.get_all_themes()
+      for _, theme in ipairs(all_installed) do
+        if not vim.tbl_contains(all_configured, theme) then
+          table.insert(themes_to_preload, theme)
+        end
+      end
+    else
+      themes_to_preload = themes.get_all_themes()
+    end
+
+    local palette_cache_mod = get_palette_cache()
+    if palette_cache_mod then
+      palette_cache_mod.preload_palettes(themes_to_preload)
+    end
+  end)
+
+  local result = picker.open(M, opts or {})
+
+  preload_themes()
+
+  return result
 end
 
 --- Set a quick favorite slot (0–9) to a theme (profile-aware if profile_scoped_state=true).
@@ -451,7 +483,6 @@ function M.set_profile(name, apply_default)
   M.config = effective
   M.state.current_profile = name
 
-  -- refresh bookmarks/quick_slots from disk (so scope view is correct)
   M.state.bookmarks = cache.get_bookmarks_table()
   M.state.quick_slots = cache.get_quick_slots_table()
 
@@ -572,5 +603,24 @@ function M.get_profile_config(name)
 
   return make_effective_config(M.base_config, name)
 end
+
+-- Set up periodic cleanup of expired cache entries (lazy initialization)
+local function setup_periodic_cleanup()
+  vim.schedule(function()
+    vim.defer_fn(function()
+      local ok, palette_cache_mod = pcall(get_palette_cache)
+      if ok and palette_cache_mod and palette_cache_mod.clear_expired then
+        palette_cache_mod.clear_expired()
+      end
+      local ok2, cache_mod = pcall(require, "raphael.core.cache")
+      if ok2 and cache_mod and cache_mod.clear_expired_palette_cache then
+        cache_mod.clear_expired_palette_cache()
+      end
+      setup_periodic_cleanup()
+    end, 300000) -- ~ 5 minutes
+  end)
+end
+
+vim.defer_fn(setup_periodic_cleanup, 10000)
 
 return M

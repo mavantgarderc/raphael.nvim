@@ -238,9 +238,22 @@ function M.picker_cursor_autocmd(picker_buf, cbs)
   end
   cbs = cbs or {}
   local parse = cbs.parse
-  local preview = cbs.preview
+  local preview_fn = cbs.preview
   local highlight = cbs.highlight
   local update_preview = cbs.update_preview
+
+  local debounce_utils = require("raphael.utils.debounce")
+  local debounced_preview = debounce_utils.debounce(function(theme)
+    if theme and type(preview_fn) == "function" then
+      preview_fn(theme)
+    end
+  end, 100)
+
+  local debounced_update_preview = debounce_utils.debounce(function(opts)
+    if type(update_preview) == "function" then
+      update_preview(opts or { debounced = true })
+    end
+  end, 50)
 
   vim.api.nvim_create_autocmd("CursorMoved", {
     buffer = picker_buf,
@@ -254,15 +267,13 @@ function M.picker_cursor_autocmd(picker_buf, cbs)
       if type(parse) == "function" then
         theme = parse(line)
       end
-      if theme and type(preview) == "function" then
-        preview(theme)
+      if theme then
+        debounced_preview(theme)
       end
       if type(highlight) == "function" then
         highlight()
       end
-      if type(update_preview) == "function" then
-        update_preview({ debounced = true })
-      end
+      debounced_update_preview({ debounced = true })
     end,
   })
 end
