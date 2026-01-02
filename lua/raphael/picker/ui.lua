@@ -35,6 +35,7 @@ local picker_instances = {
 ---   search_buf, search_win : search prompt buffer & window
 ---   flags              : { disable_sorting:boolean, reverse_sorting:boolean, debug:boolean }
 ---   instances          : reference to picker_instances
+---   initial_render     : boolean - flag to indicate initial render phase
 ---@type table
 local ctx = {
   core = nil,
@@ -64,6 +65,8 @@ local ctx = {
     reverse_sorting = false,
     debug = false,
   },
+
+  initial_render = true, -- Flag to indicate initial render phase
 
   instances = picker_instances,
 }
@@ -184,6 +187,7 @@ end
 ---   - BufDelete: log + preview.close_all()
 local function setup_autocmds_for_picker()
   autocmds.picker_cursor_autocmd(ctx.buf, {
+    ctx = ctx, -- Pass the context to the autocmds
     parse = function(line)
       local render = lazy_loader.get_render()
       if render then
@@ -410,6 +414,13 @@ function M.open(core, opts)
 
   setup_autocmds_for_picker()
 
+  -- Reset the initial render flag after a delay to allow normal previews
+  vim.defer_fn(function()
+    if ctx then
+      ctx.initial_render = false
+    end
+  end, 350)
+
   ---@diagnostic disable-next-line: undefined-field
   if ctx.state.current then
     local preview = lazy_loader.get_preview()
@@ -433,6 +444,21 @@ function M.open(core, opts)
       end, 200)
     end
   end
+
+  vim.defer_fn(function()
+    if ctx.state and ctx.state.current then
+      local success, err = pcall(function()
+        local theme = ctx.state.current
+        local preview_module = lazy_loader.get_preview()
+        if preview_module and theme then
+          preview_module.load_theme(theme, true)
+        end
+      end)
+      if not success then
+        vim.notify("raphael: failed to re-apply current theme: " .. tostring(err), vim.log.levels.WARN)
+      end
+    end
+  end, 400)
 
   log("DEBUG", "Picker opened successfully")
 end
