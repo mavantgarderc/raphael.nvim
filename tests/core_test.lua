@@ -167,4 +167,158 @@ describe("raphael.nvim core functionality", function()
       assert.truthy(type(core.get_current_theme) == "function")
     end)
   end)
+
+  describe("configuration management", function()
+    local config_manager = require("raphael.config_manager")
+
+    it("should export configuration correctly", function()
+      local export = config_manager.export_config(core)
+      assert.truthy(type(export) == "table")
+      assert.truthy(export.default_theme ~= nil)
+      assert.truthy(export.leader ~= nil)
+    end)
+
+    it("should validate configuration correctly", function()
+      local test_config = {
+        default_theme = "test-theme",
+        leader = "<leader>tt",
+        bookmark_group = true,
+        recent_group = true,
+        mappings = { picker = "p", next = ">", previous = "<" },
+        enable_autocmds = true,
+        enable_commands = true,
+        enable_keymaps = true,
+        enable_picker = true,
+      }
+
+      local is_valid, error_msg = config_manager.validate_config(test_config)
+      assert.truthy(is_valid)
+      assert.truthy(error_msg == nil)
+    end)
+
+    it("should detect invalid configuration", function()
+      local invalid_config = {
+        default_theme = 123, -- should be string
+        leader = 456, -- should be string
+        bookmark_group = "not_boolean", -- should be boolean
+      }
+
+      local is_valid, error_msg = config_manager.validate_config(invalid_config)
+      assert.falsy(is_valid)
+      assert.truthy(type(error_msg) == "string")
+    end)
+
+    it("should validate configuration sections correctly", function()
+      local test_config = {
+        default_theme = "test-theme",
+        leader = "<leader>tt",
+        bookmark_group = true,
+        recent_group = true,
+        mappings = { picker = "p", next = ">" },
+        filetype_themes = { lua = "test-theme" },
+        project_themes = { ["/test/path"] = "test-theme" },
+        profiles = { test = { default_theme = "test-theme" } },
+        enable_autocmds = true,
+        enable_commands = true,
+        enable_keymaps = true,
+        enable_picker = true,
+      }
+
+      local results = config_manager.validate_config_sections(test_config)
+      assert.truthy(type(results) == "table")
+      assert.truthy(results.default_theme == true)
+      assert.truthy(results.leader == true)
+      assert.truthy(results.bookmark_group == true)
+      assert.truthy(results.mappings == true)
+      assert.truthy(results.filetype_themes == true)
+      assert.truthy(results.project_themes == true)
+      assert.truthy(results.profiles == true)
+    end)
+
+    it("should get configuration diagnostics", function()
+      local test_config = {
+        default_theme = "test-theme",
+        unknown_key = "should_not_exist",
+        another_unknown_key = "also_should_not_exist",
+      }
+
+      local diagnostics = config_manager.get_config_diagnostics(test_config)
+      assert.truthy(type(diagnostics) == "table")
+      assert.truthy(diagnostics.total_keys == 3)
+      assert.truthy(#diagnostics.unknown_keys == 2)
+      assert.truthy(vim.tbl_contains(diagnostics.unknown_keys, "unknown_key"))
+      assert.truthy(vim.tbl_contains(diagnostics.unknown_keys, "another_unknown_key"))
+    end)
+
+    it("should save and load config to/from file", function()
+      local test_config = {
+        default_theme = "test-theme-save",
+        leader = "<leader>ts",
+        bookmark_group = false,
+      }
+
+      local temp_file = os.tmpname() .. ".json"
+
+      -- Save config to file
+      local save_success = config_manager.save_config_to_file(test_config, temp_file)
+      assert.truthy(save_success)
+
+      -- Import config from file
+      local imported_config = config_manager.import_config_from_file(temp_file)
+      assert.truthy(type(imported_config) == "table")
+      assert.equals("test-theme-save", imported_config.default_theme)
+      assert.equals("<leader>ts", imported_config.leader)
+      assert.falsy(imported_config.bookmark_group)
+
+      -- Clean up
+      os.remove(temp_file)
+    end)
+
+    it("should handle invalid config file import", function()
+      local non_existent_file = "/non/existent/path/config.json"
+      local imported_config = config_manager.import_config_from_file(non_existent_file)
+      assert.falsy(imported_config)
+
+      local empty_file = os.tmpname()
+      local f = io.open(empty_file, "w")
+      f:write("")
+      f:close()
+
+      local imported_empty = config_manager.import_config_from_file(empty_file)
+      assert.falsy(imported_empty)
+
+      -- Clean up
+      os.remove(empty_file)
+    end)
+
+    it("should get available presets", function()
+      local presets = config_manager.get_presets()
+      assert.truthy(type(presets) == "table")
+      assert.truthy(presets.minimal ~= nil)
+      assert.truthy(presets.full_featured ~= nil)
+      assert.truthy(presets.presentation ~= nil)
+    end)
+
+    it("should apply a preset configuration", function()
+      -- Save original config
+      local original_config = vim.deepcopy(core.base_config)
+
+      local success = config_manager.apply_preset("minimal", core)
+      assert.truthy(success)
+
+      -- Check that the preset values were applied (bookmark_group should be false for minimal preset)
+      assert.falsy(core.base_config.bookmark_group)
+
+      -- Restore original config
+      core.base_config = original_config
+      local profile_name = core.state.current_profile
+      core.config = core.get_profile_config and
+        core.get_profile_config(profile_name) or original_config
+    end)
+
+    it("should handle invalid preset", function()
+      local success = config_manager.apply_preset("non_existent_preset", core)
+      assert.falsy(success)
+    end)
+  end)
 end)
