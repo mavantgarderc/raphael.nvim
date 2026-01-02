@@ -66,6 +66,13 @@ Among La Italia's finest painters, Raphael stood out for his harmony in color �
 
 - **Configurable Icons**: All icons used in the picker (bookmarks, group arrows, history markers, etc.) are configurable via `opts.icons` (see below).
 
+- **Configuration Management**: Export, import, validate, and manage your configurations with presets:
+  - Export your current configuration to a file with `:RaphaelConfigExport`
+  - Import configurations from files with `:RaphaelConfigImport`
+  - Validate your configuration with `:RaphaelConfigValidate`
+  - Use predefined presets like "minimal", "full-featured", or "presentation" with `:RaphaelConfigPreset`
+  - List available config files with `:RaphaelConfigList`
+
 ---
 
 ## Installation
@@ -367,6 +374,23 @@ return {
   - `:RaphaelProfile` → list all profiles and mark current with `*`.
   - `:RaphaelProfile work` / `night` / `presentation` → switch to that profile.
   - `:RaphaelProfile base` → clear profile (use base config only).
+
+- `:RaphaelConfigExport [file_path]`
+  Export current configuration to a JSON file (defaults to `~/.config/nvim/raphael/configs/exported_config.json`).
+
+- `:RaphaelConfigImport file_path`
+  Import and apply configuration from a JSON file.
+
+- `:RaphaelConfigValidate`
+  Validate current configuration and show diagnostics.
+
+- `:RaphaelConfigList`
+  List available configuration files in the raphael configs directory.
+
+- `:RaphaelConfigPreset [preset_name]`
+  Apply a configuration preset:
+  - `:RaphaelConfigPreset` → list all available presets.
+  - `:RaphaelConfigPreset minimal` / `full-featured` / `presentation` → apply that preset.
 
 ---
 

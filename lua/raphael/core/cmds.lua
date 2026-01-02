@@ -436,6 +436,171 @@ function M.setup(core)
     end,
     desc = "Show diff of profile vs base (:RaphaelProfileInfo [name])",
   })
+
+  local config_manager = require("raphael.config_manager")
+
+  vim.api.nvim_create_user_command("RaphaelConfigExport", function(opts)
+    local export_path = opts.args ~= "" and opts.args
+      or vim.fn.stdpath("config") .. "/raphael/configs/exported_config.json"
+    local config_to_export = config_manager.export_config(core)
+
+    if not config_to_export then
+      vim.notify("raphael: failed to export configuration", vim.log.levels.ERROR)
+      return
+    end
+
+    if config_manager.save_config_to_file(config_to_export, export_path) then
+      vim.notify("raphael: configuration exported to " .. export_path, vim.log.levels.INFO)
+    end
+  end, {
+    nargs = "?",
+    desc = "Export current Raphael configuration to a file",
+  })
+
+  vim.api.nvim_create_user_command("RaphaelConfigImport", function(opts)
+    if opts.args == "" then
+      vim.notify("raphael: please specify a config file path to import", vim.log.levels.WARN)
+      return
+    end
+
+    local imported_config = config_manager.import_config_from_file(opts.args)
+    if not imported_config then
+      vim.notify("raphael: failed to import configuration from " .. opts.args, vim.log.levels.ERROR)
+      return
+    end
+
+    local is_valid, error_msg = config_manager.validate_config(imported_config)
+    if not is_valid then
+      vim.notify("raphael: imported config is invalid: " .. error_msg, vim.log.levels.ERROR)
+      return
+    end
+
+    core.base_config = imported_config
+    local profile_name = core.state.current_profile
+    core.config = core.get_profile_config(profile_name) or imported_config
+
+    vim.notify("raphael: configuration imported and applied from " .. opts.args, vim.log.levels.INFO)
+  end, {
+    nargs = 1,
+    desc = "Import Raphael configuration from a file",
+  })
+
+  vim.api.nvim_create_user_command("RaphaelConfigValidate", function()
+    local diagnostics = config_manager.get_config_diagnostics(core.base_config)
+    local validation_results = config_manager.validate_config_sections(core.base_config)
+
+    local lines = { "Raphael Configuration Validation:", "" }
+
+    table.insert(lines, string.format("Total keys: %d", diagnostics.total_keys))
+    table.insert(lines, string.format("Unknown keys: %d", #diagnostics.unknown_keys))
+    if #diagnostics.unknown_keys > 0 then
+      for _, key in ipairs(diagnostics.unknown_keys) do
+        table.insert(lines, string.format("  - %s", key))
+      end
+    end
+    table.insert(lines, string.format("Missing defaults: %d", #diagnostics.missing_defaults))
+    if #diagnostics.missing_defaults > 0 then
+      for _, key in ipairs(diagnostics.missing_defaults) do
+        table.insert(lines, string.format("  - %s", key))
+      end
+    end
+
+    table.insert(lines, "")
+    table.insert(lines, "Section validation:")
+    for section, is_valid in pairs(validation_results) do
+      if type(is_valid) == "boolean" then
+        local status = is_valid and "✓" or "✗"
+        table.insert(lines, string.format("  %s %s", status, section))
+      end
+    end
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
+    vim.api.nvim_set_option_value("buftype", "nofile", { buf = buf })
+    vim.api.nvim_buf_set_name(buf, "RaphaelConfigValidate")
+
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.api.nvim_set_option_value("filetype", "text", { buf = buf })
+    vim.api.nvim_win_set_buf(0, buf)
+  end, {
+    desc = "Validate current Raphael configuration",
+  })
+
+  vim.api.nvim_create_user_command("RaphaelConfigList", function()
+    local config_files = config_manager.list_config_files()
+
+    if #config_files == 0 then
+      vim.notify("raphael: no config files found in ~/.config/nvim/raphael/configs/", vim.log.levels.INFO)
+      return
+    end
+
+    local lines = { "Available Raphael configuration files:", "" }
+    for _, file in ipairs(config_files) do
+      table.insert(lines, file)
+    end
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
+    vim.api.nvim_set_option_value("buftype", "nofile", { buf = buf })
+    vim.api.nvim_buf_set_name(buf, "RaphaelConfigList")
+
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.api.nvim_set_option_value("filetype", "text", { buf = buf })
+    vim.api.nvim_win_set_buf(0, buf)
+  end, {
+    desc = "List available Raphael configuration files",
+  })
+
+  vim.api.nvim_create_user_command("RaphaelConfigPreset", function(opts)
+    local preset_name = opts.args
+    if preset_name == "" or not preset_name then
+      local presets = config_manager.get_presets()
+      local preset_names = {}
+      for name, _ in pairs(presets) do
+        table.insert(preset_names, name)
+      end
+
+      local lines = { "Available Raphael configuration presets:", "" }
+      for _, name in ipairs(preset_names) do
+        table.insert(lines, "- " .. name)
+      end
+
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
+      vim.api.nvim_set_option_value("buftype", "nofile", { buf = buf })
+      vim.api.nvim_buf_set_name(buf, "RaphaelConfigPreset")
+
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      vim.api.nvim_set_option_value("filetype", "text", { buf = buf })
+      vim.api.nvim_win_set_buf(0, buf)
+      return
+    end
+
+    config_manager.apply_preset(preset_name, core)
+  end, {
+    nargs = "?",
+    complete = function(ArgLead)
+      local presets = config_manager.get_presets()
+      local names = {}
+      for name, _ in pairs(presets) do
+        table.insert(names, name)
+      end
+
+      if not ArgLead or ArgLead == "" then
+        return names
+      end
+
+      local res = {}
+      local needle = ArgLead:lower()
+      for _, n in ipairs(names) do
+        if n:lower():find(needle, 1, true) then
+          table.insert(res, n)
+        end
+      end
+      return res
+    end,
+    desc = "Apply a Raphael configuration preset (:RaphaelConfigPreset [preset_name])",
+  })
 end
 
 return M

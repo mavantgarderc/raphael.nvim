@@ -135,6 +135,66 @@ function M.statusline()
   return "󰉼 " .. theme
 end
 
+--- Export current configuration to a file.
+---
+--- @param file_path string|nil Path to export configuration to (optional)
+--- @return boolean success Whether the export was successful
+function M.export_config(file_path)
+  local config_manager = require("raphael.config_manager")
+  local config_to_export = config_manager.export_config(core)
+
+  if not config_to_export then
+    return false
+  end
+
+  return config_manager.save_config_to_file(
+    config_to_export,
+    file_path or vim.fn.stdpath("config") .. "/raphael/configs/exported_config.json"
+  )
+end
+
+--- Import configuration from a file and apply it.
+---
+--- @param file_path string Path to import configuration from
+--- @return boolean success Whether the import was successful
+function M.import_config(file_path)
+  local config_manager = require("raphael.config_manager")
+  local imported_config = config_manager.import_config_from_file(file_path)
+
+  if not imported_config then
+    return false
+  end
+
+  local is_valid, error_msg = config_manager.validate_config(imported_config)
+  if not is_valid then
+    vim.notify("raphael: imported config is invalid: " .. error_msg, vim.log.levels.ERROR)
+    return false
+  end
+
+  core.base_config = imported_config
+  local profile_name = core.state.current_profile
+  core.config = core.get_profile_config(profile_name) or imported_config
+
+  return true
+end
+
+--- Apply a configuration preset.
+---
+--- @param preset_name string Name of the preset to apply
+--- @return boolean success Whether the preset was applied successfully
+function M.apply_preset(preset_name)
+  local config_manager = require("raphael.config_manager")
+  return config_manager.apply_preset(preset_name, core)
+end
+
+--- Validate current configuration.
+---
+--- @return table results Validation results
+function M.validate_config()
+  local config_manager = require("raphael.config_manager")
+  return config_manager.validate_config_sections(M.config or {})
+end
+
 -- ────────────────────────────────────────────────────────────────────────
 -- Setup
 -- ────────────────────────────────────────────────────────────────────────
