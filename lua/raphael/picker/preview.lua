@@ -228,7 +228,9 @@ end
 ---@param ctx table
 ---@param theme string
 function M.preview_theme(ctx, theme)
+  vim.notify("DEBUG: preview_theme called with theme: " .. tostring(theme), vim.log.levels.INFO)
   if not theme or not themes.is_available(theme) then
+    vim.notify("DEBUG: preview_theme - theme is nil or not available", vim.log.levels.INFO)
     return
   end
 
@@ -237,11 +239,13 @@ function M.preview_theme(ctx, theme)
     compare_active_side = "candidate"
   end
 
+  vim.notify("DEBUG: preview_theme - about to load theme: " .. theme, vim.log.levels.INFO)
   local ok, err = pcall(load_theme_raw, theme, false)
   if not ok then
     vim.notify("raphael: failed to preview theme: " .. tostring(err), vim.log.levels.ERROR)
     return
   end
+  vim.notify("DEBUG: preview_theme - theme loaded successfully: " .. theme, vim.log.levels.INFO)
 
   active_preview_theme = theme
   palette_hl_cache = {}
@@ -249,6 +253,7 @@ function M.preview_theme(ctx, theme)
   if not ok2 then
     vim.notify("raphael: failed to update palette: " .. tostring(err2), vim.log.levels.ERROR)
   end
+  vim.notify("DEBUG: preview_theme - completed for theme: " .. theme, vim.log.levels.INFO)
 end
 
 --- Expose raw load_theme for UI revert logic / compare.
