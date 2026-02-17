@@ -25,25 +25,23 @@ end
 
 local function run_testsuite(suite_name, test_func)
   print_header("Running " .. suite_name)
-  
+
   local total_tests = 0
   local passed_tests = 0
-  
+
   -- Capture test results by running the test function
-  local success, err = pcall(test_func, 
-    function(name, func)
-      total_tests = total_tests + 1
-      if run_test(name, func) then
-        passed_tests = passed_tests + 1
-      end
+  local success, err = pcall(test_func, function(name, func)
+    total_tests = total_tests + 1
+    if run_test(name, func) then
+      passed_tests = passed_tests + 1
     end
-  )
-  
+  end)
+
   if not success then
     print("Error running testsuite: " .. err)
     return 0, 0
   end
-  
+
   print_header(string.format("Results: %d/%d tests passed", passed_tests, total_tests))
   return passed_tests, total_tests
 end
@@ -51,16 +49,16 @@ end
 -- Define a simple describe/it implementation for our tests
 local function describe(description, test_block)
   print("\n" .. description .. ":")
-  
+
   local tests = {}
-  
+
   local function it(name, test_func)
-    table.insert(tests, {name = name, func = test_func})
+    table.insert(tests, { name = name, func = test_func })
   end
-  
+
   -- Run the test block to register tests
   test_block(it)
-  
+
   -- Execute registered tests
   for _, test in ipairs(tests) do
     run_test(test.name, test.func)
@@ -71,24 +69,24 @@ end
 local function load_test_file(filepath)
   local env = {
     describe = describe,
-    it = function(name, func) 
+    it = function(name, func)
       run_test(name, func)
     end,
     assert = {
-      truthy = function(value, msg) 
-        if not value then 
-          error(msg or "Expected value to be truthy, got " .. tostring(value)) 
-        end 
+      truthy = function(value, msg)
+        if not value then
+          error(msg or "Expected value to be truthy, got " .. tostring(value))
+        end
       end,
-      falsy = function(value, msg) 
-        if value then 
-          error(msg or "Expected value to be falsy, got " .. tostring(value)) 
-        end 
+      falsy = function(value, msg)
+        if value then
+          error(msg or "Expected value to be falsy, got " .. tostring(value))
+        end
       end,
-      equals = function(expected, actual, msg) 
-        if expected ~= actual then 
-          error(msg or string.format("Expected %s, got %s", tostring(expected), tostring(actual))) 
-        end 
+      equals = function(expected, actual, msg)
+        if expected ~= actual then
+          error(msg or string.format("Expected %s, got %s", tostring(expected), tostring(actual)))
+        end
       end,
       same = function(expected, actual, msg)
         if vim then
@@ -141,12 +139,12 @@ local function load_test_file(filepath)
     vim = vim,
     math = math,
   }
-  
+
   local chunk, err = loadfile(filepath, "t", env)
   if not chunk then
     error("Failed to load test file: " .. err)
   end
-  
+
   local success, result = pcall(chunk)
   if not success then
     error("Error running test file: " .. result)
@@ -159,7 +157,7 @@ print("====================================")
 
 local test_files = {
   "tests/core_test.lua",
-  "tests/config_manager_test.lua"
+  "tests/config_manager_test.lua",
 }
 
 local total_passed = 0
@@ -167,7 +165,7 @@ local total_tests = 0
 
 for _, test_file in ipairs(test_files) do
   print_header("Loading test file: " .. test_file)
-  
+
   local success, err = pcall(load_test_file, test_file)
   if not success then
     print("Failed to load " .. test_file .. ": " .. err)
