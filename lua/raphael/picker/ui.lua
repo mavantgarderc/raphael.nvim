@@ -66,7 +66,8 @@ local ctx = {
     debug = false,
   },
 
-  initial_render = true, -- Flag to indicate initial render phase
+  initial_render = true,
+  picker_ready = false,
 
   instances = picker_instances,
 }
@@ -155,6 +156,8 @@ local function close_picker(revert)
   ctx.bookmarks = {}
   ctx.flags.disable_sorting = false
   ctx.flags.reverse_sorting = false
+  ctx.initial_render = true
+  ctx.picker_ready = false
 
   if ctx.picker_type and ctx.instances then
     ctx.instances[ctx.picker_type] = false
@@ -340,6 +343,13 @@ function M.get_cache_stats()
   return { palette_cache_size = 0, active_timers = 0 }
 end
 
+--- Check if the picker is currently open.
+---
+---@return boolean
+function M.is_open()
+  return ctx.win ~= nil and vim.api.nvim_win_is_valid(ctx.win)
+end
+
 --- Get the theme under cursor in the picker, or nil if not available.
 ---
 ---@return string|nil
@@ -393,15 +403,6 @@ function M.open(core, opts)
     keymaps_mod.highlight_current_line(ctx)
   end
 
-  ---@diagnostic disable-next-line: undefined-field
-  if ctx.state.current then
-    local preview = lazy_loader.get_preview()
-    if preview then
-      ---@diagnostic disable-next-line: undefined-field
-      preview.update_palette(ctx, ctx.state.current)
-    end
-  end
-
   local keymaps = lazy_loader.get_keymaps()
   if keymaps then
     keymaps.attach(ctx, {
@@ -414,51 +415,12 @@ function M.open(core, opts)
 
   setup_autocmds_for_picker()
 
-  -- Reset the initial render flag after a delay to allow normal previews
   vim.defer_fn(function()
-    if ctx then
+    if ctx and ctx.buf and vim.api.nvim_buf_is_valid(ctx.buf) then
       ctx.initial_render = false
+      ctx.picker_ready = true
     end
-  end, 350)
-
-  ---@diagnostic disable-next-line: undefined-field
-  if ctx.state.current then
-    local preview = lazy_loader.get_preview()
-    if preview then
-      -- Immediate update
-      ---@diagnostic disable-next-line: undefined-field
-      preview.update_palette(ctx, ctx.state.current)
-
-      vim.defer_fn(function()
-        if ctx.buf and vim.api.nvim_buf_is_valid(ctx.buf) then
-          ---@diagnostic disable-next-line: undefined-field
-          preview.update_palette(ctx, ctx.state.current)
-        end
-      end, 100)
-
-      vim.defer_fn(function()
-        if ctx.buf and vim.api.nvim_buf_is_valid(ctx.buf) then
-          ---@diagnostic disable-next-line: undefined-field
-          preview.update_palette(ctx, ctx.state.current)
-        end
-      end, 200)
-    end
-  end
-
-  vim.defer_fn(function()
-    if ctx.state and ctx.state.current then
-      local success, err = pcall(function()
-        local theme = ctx.state.current
-        local preview_module = lazy_loader.get_preview()
-        if preview_module and theme then
-          preview_module.load_theme(theme, true)
-        end
-      end)
-      if not success then
-        vim.notify("raphael: failed to re-apply current theme: " .. tostring(err), vim.log.levels.WARN)
-      end
-    end
-  end, 400)
+  end, 100)
 
   log("DEBUG", "Picker opened successfully")
 end

@@ -23,6 +23,9 @@ local GROUP_ALIAS_REVERSE = {}
 ---@param line string
 ---@return string|nil group_name
 function M.parse_line_header(line)
+  if not line or line == "" then
+    return nil
+  end
   local captured = line:match("^%s*[^%s]+%s+(.+)%s*%(%d+%)%s*$")
   if not captured then
     return nil

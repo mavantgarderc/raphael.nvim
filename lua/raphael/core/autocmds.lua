@@ -243,21 +243,13 @@ function M.picker_cursor_autocmd(picker_buf, cbs)
   local update_preview = cbs.update_preview
   local ctx = cbs.ctx or {}
 
-  local initial_setup_phase = true
-
   local debounce_utils = require("raphael.utils.debounce")
   local debounced_preview = debounce_utils.debounce(function(theme)
     if theme and type(preview_fn) == "function" then
-      local should_preview = not initial_setup_phase
-      if ctx.initial_render ~= nil then
-        should_preview = should_preview and not ctx.initial_render
-      end
-
-      if should_preview then
-        preview_fn(theme)
-      else
+      if ctx.picker_ready ~= true then
         return
       end
+      preview_fn(theme)
     end
   end, 100)
 
@@ -311,7 +303,6 @@ function M.picker_cursor_autocmd(picker_buf, cbs)
           theme = parse(line)
         end
         if theme then
-          -- The preview is handled by the debounced_preview function which checks initial_setup_phase
           debounced_preview(theme)
         end
       end
@@ -321,11 +312,6 @@ function M.picker_cursor_autocmd(picker_buf, cbs)
       debounced_update_preview({ debounced = true })
     end,
   })
-
-  -- Set a timer to disable the initial setup phase after a delay
-  vim.defer_fn(function()
-    initial_setup_phase = false
-  end, 300) -- 300ms to ensure full setup completion
 end
 
 --- Attach a BufDelete autocmd to the picker buffer.

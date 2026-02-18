@@ -158,7 +158,7 @@ function M.setup(core)
   end, { desc = "Apply a random theme" })
 
   vim.api.nvim_create_user_command("RaphaelBookmarkToggle", function()
-    if not core.picker or not core.picker.picker_win or not vim.api.nvim_win_is_valid(core.picker.picker_win) then
+    if not picker.is_open() then
       vim.notify("Picker not open – opening it first…", vim.log.levels.INFO)
       core.open_picker({ only_configured = true })
       vim.defer_fn(function()
