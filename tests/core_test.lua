@@ -312,8 +312,7 @@ describe("raphael.nvim core functionality", function()
       -- Restore original config
       core.base_config = original_config
       local profile_name = core.state.current_profile
-      core.config = core.get_profile_config and
-        core.get_profile_config(profile_name) or original_config
+      core.config = core.get_profile_config and core.get_profile_config(profile_name) or original_config
     end)
 
     it("should handle invalid preset", function()

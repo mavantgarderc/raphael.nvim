@@ -950,29 +950,32 @@ function M.attach(ctx, fns)
       return i >= skip_start and i <= skip_end
     end
 
-    for i = cur + 1, #lines do
+    local i = cur + 1
+    while i <= #lines do
       if is_in_skip(i) then
         i = skip_end + 1
-      end
-      local theme = render.parse_line_theme(core, lines[i])
-      if theme and ctx.bookmarks[theme] then
-        vim.api.nvim_win_set_cursor(win, { i, 0 })
-        M.highlight_current_line(ctx)
-        return
+      else
+        local theme = render.parse_line_theme(core, lines[i])
+        if theme and ctx.bookmarks[theme] then
+          vim.api.nvim_win_set_cursor(win, { i, 0 })
+          M.highlight_current_line(ctx)
+          return
+        end
+        i = i + 1
       end
     end
 
-    for i = 1, cur - 1 do
-      if is_in_skip(i) then
-        goto continue
+    i = 1
+    while i < cur do
+      if not is_in_skip(i) then
+        local theme = render.parse_line_theme(core, lines[i])
+        if theme and ctx.bookmarks[theme] then
+          vim.api.nvim_win_set_cursor(win, { i, 0 })
+          M.highlight_current_line(ctx)
+          return
+        end
       end
-      local theme = render.parse_line_theme(core, lines[i])
-      if theme and ctx.bookmarks[theme] then
-        vim.api.nvim_win_set_cursor(win, { i, 0 })
-        M.highlight_current_line(ctx)
-        return
-      end
-      ::continue::
+      i = i + 1
     end
   end, { buffer = buf, desc = "Next bookmark (skip group)" })
 
@@ -1005,29 +1008,32 @@ function M.attach(ctx, fns)
       return i >= skip_start and i <= skip_end
     end
 
-    for i = cur - 1, 1, -1 do
+    local i = cur - 1
+    while i >= 1 do
       if is_in_skip(i) then
         i = skip_start - 1
-      end
-      local theme = render.parse_line_theme(core, lines[i])
-      if theme and ctx.bookmarks[theme] then
-        vim.api.nvim_win_set_cursor(win, { i, 0 })
-        M.highlight_current_line(ctx)
-        return
+      else
+        local theme = render.parse_line_theme(core, lines[i])
+        if theme and ctx.bookmarks[theme] then
+          vim.api.nvim_win_set_cursor(win, { i, 0 })
+          M.highlight_current_line(ctx)
+          return
+        end
+        i = i - 1
       end
     end
 
-    for i = #lines, cur + 1, -1 do
-      if is_in_skip(i) then
-        goto continue
+    i = #lines
+    while i > cur do
+      if not is_in_skip(i) then
+        local theme = render.parse_line_theme(core, lines[i])
+        if theme and ctx.bookmarks[theme] then
+          vim.api.nvim_win_set_cursor(win, { i, 0 })
+          M.highlight_current_line(ctx)
+          return
+        end
       end
-      local theme = render.parse_line_theme(core, lines[i])
-      if theme and ctx.bookmarks[theme] then
-        vim.api.nvim_win_set_cursor(win, { i, 0 })
-        M.highlight_current_line(ctx)
-        return
-      end
-      ::continue::
+      i = i - 1
     end
   end, { buffer = buf, desc = "Prev bookmark (skip group)" })
 
@@ -1060,29 +1066,32 @@ function M.attach(ctx, fns)
       return i >= skip_start and i <= skip_end
     end
 
-    for i = cur + 1, #lines do
+    local i = cur + 1
+    while i <= #lines do
       if is_in_skip(i) then
         i = skip_end + 1
-      end
-      local theme = render.parse_line_theme(core, lines[i])
-      if theme and vim.tbl_contains(state.history, theme) then
-        vim.api.nvim_win_set_cursor(win, { i, 0 })
-        M.highlight_current_line(ctx)
-        return
+      else
+        local theme = render.parse_line_theme(core, lines[i])
+        if theme and vim.tbl_contains(state.history, theme) then
+          vim.api.nvim_win_set_cursor(win, { i, 0 })
+          M.highlight_current_line(ctx)
+          return
+        end
+        i = i + 1
       end
     end
 
-    for i = 1, cur - 1 do
-      if is_in_skip(i) then
-        goto continue
+    i = 1
+    while i < cur do
+      if not is_in_skip(i) then
+        local theme = render.parse_line_theme(core, lines[i])
+        if theme and vim.tbl_contains(state.history, theme) then
+          vim.api.nvim_win_set_cursor(win, { i, 0 })
+          M.highlight_current_line(ctx)
+          return
+        end
       end
-      local theme = render.parse_line_theme(core, lines[i])
-      if theme and vim.tbl_contains(state.history, theme) then
-        vim.api.nvim_win_set_cursor(win, { i, 0 })
-        M.highlight_current_line(ctx)
-        return
-      end
-      ::continue::
+      i = i + 1
     end
   end, { buffer = buf, desc = "Next recent (skip group)" })
 
@@ -1115,29 +1124,32 @@ function M.attach(ctx, fns)
       return i >= skip_start and i <= skip_end
     end
 
-    for i = cur - 1, 1, -1 do
+    local i = cur - 1
+    while i >= 1 do
       if is_in_skip(i) then
         i = skip_start - 1
-      end
-      local theme = render.parse_line_theme(core, lines[i])
-      if theme and vim.tbl_contains(state.history, theme) then
-        vim.api.nvim_win_set_cursor(win, { i, 0 })
-        M.highlight_current_line(ctx)
-        return
+      else
+        local theme = render.parse_line_theme(core, lines[i])
+        if theme and vim.tbl_contains(state.history, theme) then
+          vim.api.nvim_win_set_cursor(win, { i, 0 })
+          M.highlight_current_line(ctx)
+          return
+        end
+        i = i - 1
       end
     end
 
-    for i = #lines, cur + 1, -1 do
-      if is_in_skip(i) then
-        goto continue
+    i = #lines
+    while i > cur do
+      if not is_in_skip(i) then
+        local theme = render.parse_line_theme(core, lines[i])
+        if theme and vim.tbl_contains(state.history, theme) then
+          vim.api.nvim_win_set_cursor(win, { i, 0 })
+          M.highlight_current_line(ctx)
+          return
+        end
       end
-      local theme = render.parse_line_theme(core, lines[i])
-      if theme and vim.tbl_contains(state.history, theme) then
-        vim.api.nvim_win_set_cursor(win, { i, 0 })
-        M.highlight_current_line(ctx)
-        return
-      end
-      ::continue::
+      i = i - 1
     end
   end, { buffer = buf, desc = "Prev recent (skip group)" })
 

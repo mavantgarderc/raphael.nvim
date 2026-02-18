@@ -147,7 +147,7 @@ function M.validate_config_sections(config_data)
 
   if type(config_data.mappings) == "table" then
     results.mappings = true
-    for key, val in pairs(config_data.mappings) do
+    for _, val in pairs(config_data.mappings) do
       if type(val) ~= "string" then
         results.mappings = false
         break
@@ -230,7 +230,7 @@ function M.get_config_diagnostics(config_data)
     missing_defaults = {},
   }
 
-  for k, _ in pairs(config_data) do
+  for _ in pairs(config_data) do
     diagnostics.total_keys = diagnostics.total_keys + 1
   end
 
@@ -240,7 +240,7 @@ function M.get_config_diagnostics(config_data)
     end
   end
 
-  for key, default_val in pairs(config.defaults) do
+  for key in pairs(config.defaults) do
     if config_data[key] == nil then
       table.insert(diagnostics.missing_defaults, key)
     end

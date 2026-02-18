@@ -394,7 +394,37 @@ return {
 
 ---
 
-## Picker internals (module paths)
+## Debug & Troubleshooting
+
+### Debug Commands
+
+| Command | Description |
+|---------|-------------|
+| `:RaphaelDebug` or `:RaphaelDebug status` | Show diagnostics |
+| `:RaphaelDebug repair` | Fix corrupted state |
+| `:RaphaelDebug backup` | Create backup |
+| `:RaphaelDebug restore` | Restore from backup |
+| `:RaphaelDebug export` | Export state to file |
+| `:RaphaelDebug clear` | Reset all state |
+| `:RaphaelDebug stats` | Show statistics |
+
+### State File
+
+Located at `stdpath("data")/raphael/state.json`:
+- `current`, `saved`, `previous` themes
+- `bookmarks`, `history`, `quick_slots`
+- `undo_history` stack
+
+Backup saved to `state.json.backup`.
+
+### Corrupted State?
+
+1. Run `:RaphaelDebug status` to check
+2. Run `:RaphaelDebug repair` to fix
+3. If still broken: `:RaphaelDebug restore` from backup
+4. Last resort: `:RaphaelDebug clear` to reset
+
+### Picker Debug
 
 ```vim
 :lua require("raphael.picker.ui").toggle_debug()

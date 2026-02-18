@@ -395,29 +395,7 @@ end
 function M.open_picker(opts)
   opts = opts or {}
 
-  local preload_themes = vim.schedule_wrap(function()
-    local themes_to_preload = {}
-    if opts.exclude_configured then
-      local all_installed = vim.tbl_keys(themes.installed)
-      local all_configured = themes.get_all_themes()
-      for _, theme in ipairs(all_installed) do
-        if not vim.tbl_contains(all_configured, theme) then
-          table.insert(themes_to_preload, theme)
-        end
-      end
-    else
-      themes_to_preload = themes.get_all_themes()
-    end
-
-    local palette_cache_mod = get_palette_cache()
-    if palette_cache_mod then
-      palette_cache_mod.preload_palettes(themes_to_preload)
-    end
-  end)
-
   local result = picker.open(M, opts or {})
-
-  preload_themes()
 
   return result
 end

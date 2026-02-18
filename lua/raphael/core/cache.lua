@@ -6,6 +6,11 @@
 ---   - Every helper reads the JSON, mutates, and writes it back.
 ---   - The in-memory "authoritative" state lives in raphael.core; this
 ---     module is the disk-backed source of truth.
+---
+--- Features:
+---   - Automatic backup before writes
+---   - State validation and auto-repair on read
+---   - Graceful handling of corrupted state
 
 local constants = require("raphael.constants")
 
@@ -14,12 +19,46 @@ local M = {}
 local uv = vim.loop
 
 local decode_failed_once = false
+local auto_repair_enabled = true
 
 local function ensure_dir()
   local dir = vim.fn.fnamemodify(constants.STATE_FILE, ":h")
   if vim.fn.isdirectory(dir) == 0 then
     vim.fn.mkdir(dir, "p")
   end
+end
+
+local function get_backup_path()
+  return constants.STATE_FILE .. ".backup"
+end
+
+local function create_backup()
+  local file = io.open(constants.STATE_FILE, "r")
+  if not file then
+    return false
+  end
+  local content = file:read("*a")
+  file:close()
+
+  local backup_path = get_backup_path()
+  local backup_file = io.open(backup_path, "w")
+  if not backup_file then
+    return false
+  end
+  backup_file:write(content)
+  backup_file:close()
+  return true
+end
+
+local function restore_backup()
+  local backup_path = get_backup_path()
+  local file = io.open(backup_path, "r")
+  if not file then
+    return nil, "No backup file"
+  end
+  local content = file:read("*a")
+  file:close()
+  return content, nil
 end
 
 --- Default state structure (pure, no side effects).
@@ -143,11 +182,14 @@ end
 --- Async write helper.
 ---
 --- Writes `data` to `path` asynchronously using libuv, and notifies on error.
+--- Creates a backup before writing.
 ---
 --- @param path string  Absolute path to state file
 --- @param data string  JSON-encoded string
 local function async_write(path, data)
   ensure_dir()
+
+  create_backup()
 
   uv.fs_open(path, "w", 438, function(open_err, fd)
     if open_err or not fd then
@@ -171,6 +213,8 @@ end
 --- Read state from disk (or return defaults if file doesn't exist / is invalid).
 ---
 --- This is the canonical entry for reading the on-disk state.
+--- If the file is corrupted, attempts to restore from backup.
+--- Validates and auto-repairs state if needed.
 ---
 --- @return table state
 function M.read()
@@ -189,13 +233,42 @@ function M.read()
   local ok, decoded = pcall(vim.json.decode, content)
   if not ok then
     if not decode_failed_once then
-      vim.notify("raphael.nvim: Failed to decode state file, using defaults", vim.log.levels.WARN)
+      vim.notify("raphael.nvim: State file corrupted, attempting backup restore...", vim.log.levels.WARN)
       decode_failed_once = true
     end
+
+    local backup_content, backup_err = restore_backup()
+    if backup_content then
+      local backup_ok, backup_decoded = pcall(vim.json.decode, backup_content)
+      if backup_ok then
+        vim.notify("raphael.nvim: Restored from backup successfully", vim.log.levels.INFO)
+        return normalize_state(backup_decoded)
+      end
+    end
+
+    vim.notify(
+      "raphael.nvim: Backup restore failed (" .. tostring(backup_err) .. "), using defaults",
+      vim.log.levels.WARN
+    )
     return default_state()
   end
 
-  return normalize_state(decoded)
+  local state = normalize_state(decoded)
+
+  if auto_repair_enabled then
+    local ok_debug, debug_mod = pcall(require, "raphael.debug")
+    if ok_debug and debug_mod then
+      local issues = debug_mod.validate_state(state)
+      if #issues > 0 then
+        state = debug_mod.repair_state(state)
+        vim.schedule(function()
+          M.write(state)
+        end)
+      end
+    end
+  end
+
+  return state
 end
 
 --- Write full state to disk (async).
@@ -661,6 +734,61 @@ function M.redo_pop()
   M.write(state)
 
   return undo.stack[undo.index]
+end
+
+--- Get path to backup file.
+---
+--- @return string
+function M.get_backup_path()
+  return get_backup_path()
+end
+
+--- Manually create a backup of current state.
+---
+--- @return boolean success
+function M.create_backup()
+  return create_backup()
+end
+
+--- Restore state from backup file.
+---
+--- @return boolean success
+--- @return string|nil error
+function M.restore_from_backup()
+  local content, err = restore_backup()
+  if not content then
+    return false, err
+  end
+
+  local ok, decoded = pcall(vim.json.decode, content)
+  if not ok then
+    return false, "Backup file is corrupted"
+  end
+
+  local state = normalize_state(decoded)
+  M.write(state)
+  return true, nil
+end
+
+--- Check if state file exists.
+---
+--- @return boolean
+function M.state_exists()
+  return vim.fn.filereadable(constants.STATE_FILE) == 1
+end
+
+--- Check if backup file exists.
+---
+--- @return boolean
+function M.backup_exists()
+  return vim.fn.filereadable(get_backup_path()) == 1
+end
+
+--- Get state file path.
+---
+--- @return string
+function M.get_state_path()
+  return constants.STATE_FILE
 end
 
 return M

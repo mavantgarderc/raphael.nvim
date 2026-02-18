@@ -53,7 +53,7 @@ M.defaults = {
     random = "r",
   },
 
-  default_theme = "kanagawa-paper-ink",
+  default_theme = "habamax",
 
   bookmark_group = true,
   recent_group = true,

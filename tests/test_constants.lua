@@ -53,4 +53,3 @@ M.HL = {
 M.FOOTER_HINTS = "<CR> apply • b bookmark • / search • s sort • q close"
 
 return M
-

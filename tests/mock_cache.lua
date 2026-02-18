@@ -380,4 +380,3 @@ function M.redo_pop()
 end
 
 return M
-
