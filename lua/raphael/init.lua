@@ -135,6 +135,31 @@ function M.statusline()
   return "󰉼 " .. theme
 end
 
+--- Create a lualine component for displaying the current theme.
+---
+--- Automatically adjusts colors based on light/dark theme detection.
+---
+---@param opts table|nil
+---   - icon: string (default: "󰉼")
+---   - show_profile: boolean (default: true)
+---   - separator: string (default: " ")
+---   - dynamic_color: boolean (default: true)
+---   - brackets: table (default: {"[", "]"})
+---@return function
+---
+---@usage
+---   require('lualine').setup({
+---     sections = {
+---       lualine_c = {
+---         { require('raphael').lualine_component() }
+---       }
+---     }
+---   })
+function M.lualine_component(opts)
+  local lualine = require("raphael.lualine")
+  return lualine.component(opts)
+end
+
 --- Export current configuration to a file.
 ---
 --- @param file_path string|nil Path to export configuration to (optional)
