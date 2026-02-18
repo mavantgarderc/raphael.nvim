@@ -601,6 +601,67 @@ function M.setup(core)
     end,
     desc = "Apply a Raphael configuration preset (:RaphaelConfigPreset [preset_name])",
   })
+
+  vim.api.nvim_create_user_command("RaphaelDebug", function(opts)
+    local ok, debug_mod = pcall(require, "raphael.debug")
+    if not ok then
+      vim.notify("raphael: debug module not available", vim.log.levels.ERROR)
+      return
+    end
+
+    local subcmd = vim.trim(opts.args or "")
+    if subcmd == "" or subcmd == "status" then
+      debug_mod.show_diagnostics()
+    elseif subcmd == "repair" then
+      debug_mod.repair_and_save()
+    elseif subcmd == "backup" then
+      local success, err = debug_mod.backup_state()
+      if success then
+        vim.notify("raphael: backup created at " .. debug_mod.get_backup_path(), vim.log.levels.INFO)
+      else
+        vim.notify("raphael: backup failed: " .. tostring(err), vim.log.levels.ERROR)
+      end
+    elseif subcmd == "restore" then
+      local cache = require("raphael.core.cache")
+      local success, err = cache.restore_from_backup()
+      if success then
+        vim.notify("raphael: restored from backup", vim.log.levels.INFO)
+      else
+        vim.notify("raphael: restore failed: " .. tostring(err), vim.log.levels.ERROR)
+      end
+    elseif subcmd == "export" then
+      local success, path = debug_mod.export_state()
+      if not success then
+        vim.notify("raphael: export failed: " .. tostring(path), vim.log.levels.ERROR)
+      end
+    elseif subcmd == "clear" then
+      local cache = require("raphael.core.cache")
+      cache.clear()
+      vim.notify("raphael: state cleared", vim.log.levels.INFO)
+    elseif subcmd == "stats" then
+      local stats = debug_mod.get_stats()
+      vim.notify(vim.inspect(stats), vim.log.levels.INFO)
+    else
+      vim.notify("raphael: unknown debug command: " .. subcmd, vim.log.levels.WARN)
+      vim.notify("Available: status, repair, backup, restore, export, clear, stats", vim.log.levels.INFO)
+    end
+  end, {
+    nargs = "?",
+    complete = function(ArgLead)
+      local cmds = { "status", "repair", "backup", "restore", "export", "clear", "stats" }
+      if not ArgLead or ArgLead == "" then
+        return cmds
+      end
+      local res = {}
+      for _, c in ipairs(cmds) do
+        if c:find(ArgLead:lower(), 1, true) then
+          table.insert(res, c)
+        end
+      end
+      return res
+    end,
+    desc = "Raphael debug commands: status, repair, backup, restore, export, clear, stats",
+  })
 end
 
 return M
