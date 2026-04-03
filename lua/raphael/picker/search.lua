@@ -52,6 +52,10 @@ function M.open(ctx, fns)
   local search_buf = vim.api.nvim_create_buf(false, true)
   ctx.search_buf = search_buf
 
+  vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = search_buf })
+  vim.api.nvim_set_option_value("buftype", "prompt", { buf = search_buf })
+  vim.api.nvim_set_option_value("swapfile", false, { buf = search_buf })
+
   local s_row = ctx.row + ctx.h - 1
   local search_win = vim.api.nvim_open_win(search_buf, true, {
     relative = "editor",
@@ -206,6 +210,9 @@ function M.open(ctx, fns)
     ctx.search_query = ""
     ctx.search_scope = nil
     fns.render()
+    if ctx.search_buf and vim.api.nvim_buf_is_valid(ctx.search_buf) then
+      vim.api.nvim_buf_set_lines(ctx.search_buf, 0, -1, false, {})
+    end
     if ctx.search_win and vim.api.nvim_win_is_valid(ctx.search_win) then
       pcall(vim.api.nvim_win_close, ctx.search_win, true)
     end
@@ -218,6 +225,9 @@ function M.open(ctx, fns)
   end, { buffer = search_buf })
 
   map("i", "<CR>", function()
+    if ctx.search_buf and vim.api.nvim_buf_is_valid(ctx.search_buf) then
+      vim.api.nvim_buf_set_lines(ctx.search_buf, 0, -1, false, {})
+    end
     if ctx.search_win and vim.api.nvim_win_is_valid(ctx.search_win) then
       pcall(vim.api.nvim_win_close, ctx.search_win, true)
     end
